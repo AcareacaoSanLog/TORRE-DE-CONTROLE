@@ -1,5 +1,10 @@
 (function () {
   const cepMap = window.TXF_CEP_MAP || {};
+  const SUPABASE_URL = 'https://ionlbxgwaqyracpztoiv.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_5W-VMD2kk7OmRP1vpEYJ4g_TZCUB93g';
+  const CLOUD_TABLE = 'dashboard_state';
+  const CLOUD_ID = 'torre-controle-txf-latest';
+
   const state = {
     rows: [],
     columns: {},
@@ -88,7 +93,10 @@
     qualityIssueList: document.getElementById('qualityIssueList'),
     exportIssuesBtn: document.getElementById('exportIssuesBtn'),
     toolsToggle: document.getElementById('toolsToggle'),
-    toolsMenu: document.getElementById('toolsMenu')
+    toolsMenu: document.getElementById('toolsMenu'),
+    cloudStatus: document.getElementById('cloudStatus'),
+    loadCloudBtn: document.getElementById('loadCloudBtn'),
+    saveCloudBtn: document.getElementById('saveCloudBtn')
   };
 
   const HISTORY_KEY = 'txf-plus-import-history-v1';
@@ -258,6 +266,105 @@
       ? value.toFixed(2).replace('.', ',')
       : number(value);
     return `${sign}${formatted}${suffix}`;
+  }
+
+  function setCloudStatus(message, type = '') {
+    els.cloudStatus.textContent = message;
+    els.cloudStatus.className = `cloud-status ${type}`.trim();
+  }
+
+  function cloudHeaders(extra = {}) {
+    return {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      ...extra
+    };
+  }
+
+  function normalizedCloudRows() {
+    return state.rows.map(row => ({
+      tracking: value(row, 'tracking'),
+      status: statusOf(row),
+      cep: cepOf(row),
+      city: value(row, 'city'),
+      bairro: value(row, 'bairro'),
+      driver: value(row, 'driver'),
+      __file: row.__file || '',
+      __sheet: row.__sheet || ''
+    }));
+  }
+
+  function applyCloudRows(payload) {
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    state.rows = rows;
+    state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'driver'];
+    state.detectedColumns = {
+      tracking: 'tracking',
+      status: 'status',
+      cep: 'cep',
+      city: 'city',
+      bairro: 'bairro',
+      driver: 'driver'
+    };
+    state.columns = { ...state.detectedColumns };
+    state.importFiles = Array.isArray(payload?.files) ? payload.files : ['importação salva na nuvem'];
+    state.importId = `cloud-${payload?.savedAt || Date.now()}`;
+    clearFilters();
+    renderAll();
+  }
+
+  async function saveCloudState() {
+    if (!state.rows.length) {
+      setCloudStatus('Nuvem: importe uma planilha antes de salvar.', 'warn');
+      return false;
+    }
+    const payload = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      files: state.importFiles.slice(),
+      rows: normalizedCloudRows()
+    };
+
+    setCloudStatus('Nuvem: salvando última importação...', 'warn');
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?on_conflict=id`, {
+        method: 'POST',
+        headers: cloudHeaders({ Prefer: 'resolution=merge-duplicates,return=representation' }),
+        body: JSON.stringify({ id: CLOUD_ID, payload, updated_at: payload.savedAt })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      setCloudStatus(`Nuvem: última importação salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
+      return true;
+    } catch (error) {
+      setCloudStatus('Nuvem: não foi possível salvar. Confira se a tabela do Supabase foi criada.', 'error');
+      console.warn('saveCloudState', error);
+      return false;
+    }
+  }
+
+  async function loadCloudState(options = {}) {
+    if (!options.silent) setCloudStatus('Nuvem: carregando última importação...', 'warn');
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?id=eq.${encodeURIComponent(CLOUD_ID)}&select=payload,updated_at`, {
+        headers: cloudHeaders()
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      if (!data.length) {
+        setCloudStatus('Nuvem: nenhuma importação salva ainda.', 'warn');
+        return false;
+      }
+      applyCloudRows(data[0].payload);
+      const savedAt = data[0].updated_at || data[0].payload?.savedAt;
+      setCloudStatus(`Nuvem: importação carregada de ${new Date(savedAt).toLocaleString('pt-BR')}.`, 'ok');
+      setView('dashboard');
+      return true;
+    } catch (error) {
+      setCloudStatus(options.silent ? 'Nuvem: configure a tabela para carregar dados compartilhados.' : 'Nuvem: não foi possível carregar. Confira a tabela do Supabase.', options.silent ? 'warn' : 'error');
+      console.warn('loadCloudState', error);
+      return false;
+    }
   }
 
   function normalizeStatus(value) {
@@ -1155,6 +1262,7 @@
 
   function downloadPending() {
     const rows = filteredRows({ kind: 'notDelivered' });
+    if (state.rows.length) saveCloudState();
     downloadRowsCsv(rows, 'pendentes-txf.csv');
   }
 
@@ -1182,6 +1290,7 @@
   }
 
   function exportVisibleRows() {
+    if (state.rows.length) saveCloudState();
     downloadRowsCsv(visibleRows(), 'visao-filtrada-txf.csv');
   }
 
@@ -1303,6 +1412,8 @@
     els.copyManagerBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.managerText || 'Importe os arquivos para gerar o resumo gerencial.'));
     els.copyActionPlanBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.actionPlanText || 'Importe os arquivos para gerar o plano de ação.'));
     els.downloadPendingBtn.addEventListener('click', downloadPending);
+    els.saveCloudBtn.addEventListener('click', () => saveCloudState());
+    els.loadCloudBtn.addEventListener('click', () => loadCloudState());
     els.exportVisibleBtn.addEventListener('click', exportVisibleRows);
     els.exportIssuesBtn.addEventListener('click', exportIssues);
     els.exportHistoryBtn.addEventListener('click', exportHistory);
@@ -1311,7 +1422,7 @@
       persistHistory();
       renderAll();
     });
-    els.applyColumnsBtn.addEventListener('click', () => {
+    els.applyColumnsBtn.addEventListener('click', async () => {
       els.columnMapper.querySelectorAll('select').forEach(select => {
         state.columns[select.dataset.columnType] = select.value;
       });
@@ -1319,6 +1430,7 @@
       saveCurrentImport();
       renderHistory();
       renderManager(state.stats);
+      await saveCloudState();
       setView('dashboard');
     });
     els.resetColumnsBtn.addEventListener('click', () => {
@@ -1390,6 +1502,7 @@
     bindEvents();
     renderAll();
     refreshIcons();
+    loadCloudState({ silent: true });
   }
 
   init();

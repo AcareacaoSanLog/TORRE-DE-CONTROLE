@@ -191,6 +191,32 @@ button { cursor: pointer; }
   justify-content: flex-end;
 }
 
+.cloud-status {
+  min-height: 30px;
+  margin: -4px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--muted);
+  background: #101820;
+  font-size: 13px;
+}
+
+.cloud-status.ok {
+  color: var(--green);
+  border-color: rgba(66, 215, 125, .36);
+}
+
+.cloud-status.warn {
+  color: var(--amber);
+  border-color: rgba(242, 184, 75, .38);
+}
+
+.cloud-status.error {
+  color: #ffcaca;
+  border-color: rgba(242, 100, 100, .45);
+}
+
 .icon-button, .plain-action, .text-button, .import-button, select {
   border: 1px solid var(--line);
   border-radius: 8px;

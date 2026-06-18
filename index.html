@@ -51,6 +51,12 @@
           <h2 id="viewTitle">Dashboard</h2>
         </div>
         <div class="top-actions">
+          <button class="icon-button" id="loadCloudBtn" title="Carregar última importação salva na nuvem" aria-label="Carregar última importação salva na nuvem">
+            <i data-lucide="cloud-download"></i>
+          </button>
+          <button class="icon-button" id="saveCloudBtn" title="Salvar importação atual na nuvem" aria-label="Salvar importação atual na nuvem">
+            <i data-lucide="cloud-upload"></i>
+          </button>
           <button class="icon-button" id="copySummaryBtn" title="Copiar resumo executivo" aria-label="Copiar resumo executivo">
             <i data-lucide="clipboard-copy"></i>
           </button>
@@ -64,6 +70,8 @@
           </label>
         </div>
       </header>
+
+      <div class="cloud-status" id="cloudStatus">Nuvem: aguardando dados</div>
 
       <section class="notice" id="emptyState">
         <div>
