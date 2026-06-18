@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Torre de Controle TXF Plus</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Navegação principal">
+      <div class="brand">
+        <div class="brand-mark">TXF</div>
+        <div>
+          <h1>Torre TXF Plus</h1>
+          <p>Controle operacional Shopee</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-button active" data-view="dashboard"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
+        <button class="nav-button" data-view="columns"><i data-lucide="columns-3"></i><span>Colunas</span><b id="columnBadge">0</b></button>
+        <button class="nav-button" data-view="mission"><i data-lucide="target"></i><span>Missão do dia</span><b id="missionBadge">0</b></button>
+        <button class="nav-button" data-view="quality"><i data-lucide="shield-alert"></i><span>Qualidade</span><b id="qualityBadge">0</b></button>
+        <button class="nav-button" data-view="manager"><i data-lucide="briefcase-business"></i><span>Gestor</span></button>
+        <button class="nav-button" data-view="received"><i data-lucide="package-open"></i><span>Received/Assigned</span></button>
+        <button class="nav-button" data-view="cities"><i data-lucide="map-pin"></i><span>Cidades</span></button>
+        <button class="nav-button" data-view="drivers"><i data-lucide="truck"></i><span>Drivers</span></button>
+        <button class="nav-button tool-toggle" type="button" id="toolsToggle" aria-expanded="false">
+          <i data-lucide="wrench"></i><span>Ferramentas</span><i data-lucide="chevron-down"></i>
+        </button>
+        <div class="tools-menu" id="toolsMenu">
+          <button class="nav-button sub" data-view="history"><i data-lucide="history"></i><span>Histórico</span></button>
+          <button class="nav-button sub" data-view="search"><i data-lucide="search"></i><span>Pesquisa 360</span></button>
+        </div>
+      </nav>
+
+      <div class="sidebar-status">
+        <span class="status-dot"></span>
+        <div>
+          <strong id="lastUpdate">Aguardando importação</strong>
+          <small><span id="cepCount">0</span> CEPs mapeados</small>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Operação TXF</p>
+          <h2 id="viewTitle">Dashboard</h2>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" id="copySummaryBtn" title="Copiar resumo executivo" aria-label="Copiar resumo executivo">
+            <i data-lucide="clipboard-copy"></i>
+          </button>
+          <button class="icon-button" id="downloadPendingBtn" title="Baixar pendentes CSV" aria-label="Baixar pendentes CSV">
+            <i data-lucide="download"></i>
+          </button>
+          <label class="import-button" id="dropZone">
+            <i data-lucide="upload-cloud"></i>
+            <span>Importar SPX/Shopee</span>
+            <input id="fileInput" type="file" multiple accept=".csv,.xlsx,.xls">
+          </label>
+        </div>
+      </header>
+
+      <section class="notice" id="emptyState">
+        <div>
+          <strong>Importe uma planilha para iniciar.</strong>
+          <span>O app identifica colunas de status, tracking, CEP, cidade, bairro e driver automaticamente.</span>
+        </div>
+      </section>
+
+      <section class="view active" id="dashboard">
+        <div class="kpi-grid" id="kpis"></div>
+
+        <section class="filter-bar hidden" id="filterBar">
+          <div class="filter-field">
+            <label>Status</label>
+            <select id="globalStatusFilter"></select>
+          </div>
+          <div class="filter-field">
+            <label>Cidade</label>
+            <select id="globalCityFilter"></select>
+          </div>
+          <div class="filter-field">
+            <label>Driver</label>
+            <select id="globalDriverFilter"></select>
+          </div>
+          <div class="quick-filters">
+            <button class="mini-button" data-quick-filter="all">Todos</button>
+            <button class="mini-button" data-quick-filter="pending">Pendentes</button>
+            <button class="mini-button" data-quick-filter="teixeira">Teixeira</button>
+            <button class="mini-button" data-quick-filter="interior">Interior</button>
+          </div>
+          <button class="text-button" id="exportVisibleBtn">Exportar visão</button>
+        </section>
+
+        <div class="goal-grid">
+          <article class="goal-panel">
+            <div class="ring" id="slaRing"><span id="slaPct">0%</span></div>
+            <div>
+              <span class="label">Meta SLA 99,5%</span>
+              <h3 id="slaTitle">Aguardando dados</h3>
+              <p id="slaText">Importe os arquivos para calcular o resultado.</p>
+            </div>
+            <button class="plain-action" data-filter="notDelivered">Ver pendentes</button>
+          </article>
+
+          <article class="goal-panel">
+            <div class="ring" id="dsRing"><span id="dsPct">0%</span></div>
+            <div>
+              <span class="label">Meta DS 98%</span>
+              <h3 id="dsTitle">Aguardando dados</h3>
+              <p id="dsText">Importe os arquivos para calcular o resultado.</p>
+            </div>
+            <button class="plain-action" data-filter="notDelivered">Ver pendentes</button>
+          </article>
+        </div>
+
+        <div class="target-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Ritmo para bater meta</h3>
+            </div>
+            <div id="targetPace" class="metric-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Alavancas de resultado</h3>
+            </div>
+            <div id="targetLevers" class="metric-list"></div>
+          </section>
+        </div>
+
+        <div class="work-grid">
+          <section class="panel large">
+            <div class="panel-head">
+              <h3>Fila prioritaria</h3>
+              <button class="text-button" data-filter="notDelivered">Abrir tudo</button>
+            </div>
+            <div id="priorityList" class="stack-list"></div>
+            <div class="panel-subhead">
+              <h3>Hub Assigned por cidade</h3>
+              <button class="text-button" data-filter="Hub_Assigned">Abrir assigned</button>
+            </div>
+            <div id="assignedRadar" class="city-radar"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>BR entregues por cidade</h3>
+              <button class="text-button" data-view-jump="cities">Ver tabela</button>
+            </div>
+            <div id="cityRadar" class="city-radar"></div>
+          </section>
+        </div>
+
+        <section class="panel map-panel">
+          <div class="panel-head">
+            <h3>Mapa operacional</h3>
+            <button class="text-button" id="copyMapBtn">Copiar mapa</button>
+          </div>
+          <div id="operationMap" class="operation-map"></div>
+        </section>
+      </section>
+
+      <section class="view" id="columns">
+        <section class="column-review compact hidden" id="columnNotice">
+          <div>
+            <strong>Conferência de colunas</strong>
+            <span id="columnNoticeText">Revise os campos detectados antes de usar a operação.</span>
+          </div>
+          <button class="text-button" data-view-jump="columns">Ajustar</button>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h3>Conferência de colunas</h3>
+            <button class="text-button" id="applyColumnsBtn">Aplicar mapeamento</button>
+          </div>
+          <div class="column-grid" id="columnMapper"></div>
+        </section>
+        <section class="panel preview-panel">
+          <div class="panel-head">
+            <h3>Prévia dos dados</h3>
+            <button class="text-button" id="resetColumnsBtn">Redetectar</button>
+          </div>
+          <div id="columnQuality" class="quality-grid"></div>
+          <div class="table-wrap"><table><thead><tr><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver</th><th>Arquivo</th></tr></thead><tbody id="previewRows"></tbody></table></div>
+        </section>
+      </section>
+
+      <section class="view" id="manager">
+        <div class="manager-grid">
+          <section class="panel manager-main">
+            <div class="panel-head">
+              <h3>Resumo para gestão</h3>
+              <button class="text-button" id="copyManagerBtn">Copiar WhatsApp</button>
+            </div>
+            <textarea id="managerSummary" class="manager-text" readonly></textarea>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Comparativo</h3>
+              <button class="text-button" data-view-jump="history">Ver histórico</button>
+            </div>
+            <div id="comparisonCards" class="comparison-grid"></div>
+          </section>
+        </div>
+        <section class="panel">
+          <div class="panel-head">
+            <h3>Plano de ação</h3>
+            <button class="text-button" id="copyActionPlanBtn">Copiar plano</button>
+          </div>
+          <div id="actionPlan" class="action-plan"></div>
+        </section>
+      </section>
+
+      <section class="view" id="history">
+        <section class="panel">
+          <div class="panel-head">
+            <h3>Histórico de importações</h3>
+            <div class="panel-actions">
+              <button class="text-button" id="exportHistoryBtn">Exportar</button>
+              <button class="text-button danger" id="clearHistoryBtn">Limpar</button>
+            </div>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+      </section>
+
+      <section class="view" id="quality">
+        <section class="panel">
+          <div class="panel-head">
+            <h3>Qualidade dos dados</h3>
+            <button class="text-button" id="exportIssuesBtn">Exportar problemas</button>
+          </div>
+          <div id="qualityOverview" class="quality-grid"></div>
+          <div id="qualityIssueList" class="issue-list"></div>
+        </section>
+      </section>
+
+      <section class="view" id="mission">
+        <section class="panel">
+          <div class="panel-head">
+            <h3>Missão do dia</h3>
+            <button class="text-button" id="copyMissionBtn">Copiar missão</button>
+          </div>
+          <div id="missionList" class="mission-list"></div>
+        </section>
+      </section>
+
+      <section class="view" id="received">
+        <div class="table-grid">
+          <section class="panel">
+            <div class="panel-head"><h3>Received por cidade/bairro</h3></div>
+            <div class="table-wrap"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="receivedTable"></tbody></table></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h3>Assigned por cidade/bairro</h3></div>
+            <div class="table-wrap"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedTable"></tbody></table></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="cities">
+        <section class="panel">
+          <div class="panel-head"><h3>Status por cidade/bairro</h3></div>
+          <div class="table-wrap tall"><table><thead><tr><th>Status</th><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="cityTable"></tbody></table></div>
+        </section>
+      </section>
+
+      <section class="view" id="drivers">
+        <section class="panel">
+          <div class="panel-head"><h3>Drivers por status</h3></div>
+          <div class="table-wrap tall"><table><thead><tr><th>Driver</th><th>Delivered</th><th>Delivering</th><th>Received</th><th>Assigned</th><th>OnHold</th><th>Total</th><th></th></tr></thead><tbody id="driverTable"></tbody></table></div>
+        </section>
+      </section>
+
+      <section class="view" id="search">
+        <section class="panel">
+          <div class="panel-head"><h3>Pesquisa 360</h3></div>
+          <div class="search-row">
+            <i data-lucide="search"></i>
+            <input id="searchInput" type="search" placeholder="Tracking, CEP, status, cidade, bairro, driver ou arquivo">
+          </div>
+          <div id="searchResults" class="result-list"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="detailModal" class="modal">
+    <form method="dialog" class="modal-box">
+      <div class="modal-head">
+        <div>
+          <h3 id="modalTitle">Detalhes</h3>
+          <p id="modalSubtitle"></p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="icon-button" id="copyRowsBtn" title="Copiar lista" aria-label="Copiar lista"><i data-lucide="copy"></i></button>
+          <button class="icon-button" value="cancel" title="Fechar" aria-label="Fechar"><i data-lucide="x"></i></button>
+        </div>
+      </div>
+      <div class="search-row modal-search">
+        <i data-lucide="filter"></i>
+        <input id="modalSearch" type="search" placeholder="Filtrar lista aberta">
+      </div>
+      <div class="table-wrap modal-table"><table><thead><tr><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver</th><th>Arquivo</th></tr></thead><tbody id="modalRows"></tbody></table></div>
+    </form>
+  </dialog>
+
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="vendor/lucide.min.js"></script>
+  <script src="cep-map.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
