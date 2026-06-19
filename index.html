@@ -23,6 +23,7 @@
         <button class="nav-button active" data-view="dashboard"><i data-lucide="layout-dashboard"></i><span>🏠 Dashboard</span></button>
         <button class="nav-button" data-view="columns"><i data-lucide="columns-3"></i><span>📋 Colunas</span><b id="columnBadge" class="hidden">0</b></button>
         <button class="nav-button" data-view="mission"><i data-lucide="target"></i><span>🎯 Missão do dia</span><b id="missionBadge">0</b></button>
+        <button class="nav-button" data-view="route"><i data-lucide="route"></i><span>🧭 Calcular rota</span></button>
         <button class="nav-button" data-view="quality"><i data-lucide="shield-alert"></i><span>🛡️ Qualidade</span><b id="qualityBadge">0</b></button>
         <button class="nav-button" data-view="manager"><i data-lucide="briefcase-business"></i><span>👤 Gestor</span></button>
         <button class="nav-button" data-view="received"><i data-lucide="package-open"></i><span>📦 Received/Assigned</span></button>
@@ -256,6 +257,58 @@
         </section>
       </section>
 
+      <section class="view" id="route">
+        <div class="route-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>🧭 Calcular rota por cidade</h3>
+              <button class="text-button" id="copyRouteBtn">Copiar rota</button>
+            </div>
+            <div class="route-picker">
+              <div class="route-picker-head">
+                <span>Cidades</span>
+                <div class="route-picker-actions">
+                  <button class="mini-button" type="button" id="routeDefaultBtn">Rota fixa</button>
+                  <button class="mini-button" type="button" id="routeAllBtn">Todas</button>
+                  <button class="mini-button" type="button" id="routeClearBtn">Limpar</button>
+                </div>
+              </div>
+              <div id="routeCityChecklist" class="route-city-checklist"></div>
+            </div>
+            <div id="routeSummary" class="route-summary"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>📍 Bairros da cidade</h3>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Cidade/Bairro</th><th>Total</th><th>Delivered</th><th>Received</th><th>Assigned</th><th>Delivering</th><th>SOC LH</th><th>OnHold</th><th>Pendentes</th><th></th></tr>
+                </thead>
+                <tbody id="routeBairroTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel preview-panel">
+          <div class="panel-head">
+            <h3>🏙️ Todas as cidades do dia</h3>
+            <button class="text-button" data-view-jump="cities">Ver tabela completa</button>
+          </div>
+          <div class="table-wrap tall">
+            <table>
+              <thead>
+                <tr><th>Cidade</th><th>Total</th><th>Delivered</th><th>Received</th><th>Assigned</th><th>Delivering</th><th>SOC LH</th><th>OnHold</th><th>Pendentes</th><th></th></tr>
+              </thead>
+              <tbody id="routeCityTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
       <section class="view" id="received">
         <div class="table-grid">
           <section class="panel">
@@ -320,7 +373,7 @@
       <section class="view" id="drivers">
         <section class="panel">
           <div class="panel-head"><h3>🚚 Drivers por status</h3></div>
-          <div class="table-wrap tall"><table><thead><tr><th>Driver</th><th>Delivered</th><th>Delivering</th><th>Received</th><th>Assigned</th><th>OnHold</th><th>Total</th><th></th></tr></thead><tbody id="driverTable"></tbody></table></div>
+          <div class="table-wrap tall"><table><thead><tr><th>Driver</th><th>Delivered</th><th>Delivering</th><th>SOC LH</th><th>Received</th><th>Assigned</th><th>OnHold</th><th>Total</th><th></th></tr></thead><tbody id="driverTable"></tbody></table></div>
         </section>
       </section>
 

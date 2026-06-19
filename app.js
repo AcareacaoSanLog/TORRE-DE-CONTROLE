@@ -19,6 +19,9 @@
     actionPlanText: '',
     history: [],
     damageRegistry: {},
+    routeCity: '',
+    routeCities: [],
+    routeSelectionTouched: false,
     importId: '',
     importFiles: [],
     filters: {
@@ -70,6 +73,15 @@
     damageBairroPreview: document.getElementById('damageBairroPreview'),
     damageStats: document.getElementById('damageStats'),
     damageTable: document.getElementById('damageTable'),
+    routeCitySelect: document.getElementById('routeCitySelect'),
+    routeCityChecklist: document.getElementById('routeCityChecklist'),
+    routeDefaultBtn: document.getElementById('routeDefaultBtn'),
+    routeAllBtn: document.getElementById('routeAllBtn'),
+    routeClearBtn: document.getElementById('routeClearBtn'),
+    routeSummary: document.getElementById('routeSummary'),
+    routeBairroTable: document.getElementById('routeBairroTable'),
+    routeCityTable: document.getElementById('routeCityTable'),
+    copyRouteBtn: document.getElementById('copyRouteBtn'),
     cityTable: document.getElementById('cityTable'),
     driverTable: document.getElementById('driverTable'),
     searchInput: document.getElementById('searchInput'),
@@ -144,6 +156,7 @@
     Return_Hub_Received: { label: 'Received retorno', className: 'st-received', tone: 'high' },
     Hub_Assigned: { label: 'Assigned', className: 'st-assigned', tone: 'normal' },
     Hub_Assigning: { label: 'Assigning', className: 'st-assigned', tone: 'normal' },
+    SOC_LHTransported: { label: 'SOC LH', className: 'st-soc-lh', tone: 'normal' },
     Avaria: { label: 'Avaria', className: 'st-damage', tone: 'high' },
     OnHold: { label: 'OnHold', className: 'st-hold', tone: 'critical' },
     Other: { label: 'Outros', className: 'st-other', tone: 'normal' }
@@ -249,6 +262,7 @@
       delivered: stats.delivered,
       pending,
       delivering: stats.delivering,
+      socLH: stats.socLH,
       received: stats.received,
       assigned: stats.assigned,
       hold: stats.hold,
@@ -270,7 +284,7 @@
 
   function deltaValue(current, previous, key) {
     if (!previous) return null;
-    return current[key] - previous[key];
+    return Number(current[key] || 0) - Number(previous[key] || 0);
   }
 
   function signed(value, suffix = '') {
@@ -342,6 +356,9 @@
     state.columns = { ...state.detectedColumns };
     state.importFiles = Array.isArray(payload?.files) ? payload.files : ['importação salva na nuvem'];
     state.importId = `cloud-${payload?.savedAt || Date.now()}`;
+    state.routeCities = [];
+    state.routeCity = '';
+    state.routeSelectionTouched = false;
     ensureRowIds();
     applyDamageRegistryToRows();
     clearFilters();
@@ -781,6 +798,7 @@
       delivering: 0,
       received: 0,
       assigned: 0,
+      socLH: 0,
       hold: 0,
       byReceived: new Map(),
       byAssigned: new Map(),
@@ -807,6 +825,7 @@
         bump(stats.byDeliveredCity, city);
       }
       if (status === 'Delivering') stats.delivering += 1;
+      if (status === 'SOC_LHTransported') stats.socLH += 1;
       if (status === 'OnHold') stats.hold += 1;
       if (isReceived(status)) {
         stats.received += 1;
@@ -822,7 +841,7 @@
       bump(stats.byCity, city);
       if (pending) bump(stats.byCityPending, city);
       if (!stats.byRegion.has(region)) {
-        stats.byRegion.set(region, { total: 0, delivered: 0, pending: 0, received: 0, assigned: 0, delivering: 0, hold: 0, cities: new Map() });
+        stats.byRegion.set(region, { total: 0, delivered: 0, pending: 0, received: 0, assigned: 0, delivering: 0, socLH: 0, hold: 0, cities: new Map() });
       }
       const regionData = stats.byRegion.get(region);
       regionData.total += 1;
@@ -831,15 +850,17 @@
       if (isReceived(status)) regionData.received += 1;
       if (isAssigned(status)) regionData.assigned += 1;
       if (status === 'Delivering') regionData.delivering += 1;
+      if (status === 'SOC_LHTransported') regionData.socLH += 1;
       if (status === 'OnHold') regionData.hold += 1;
       bump(regionData.cities, city);
 
       if (!stats.byDriver.has(driver)) {
-        stats.byDriver.set(driver, { Delivered: 0, Delivering: 0, Received: 0, Assigned: 0, OnHold: 0, total: 0 });
+        stats.byDriver.set(driver, { Delivered: 0, Delivering: 0, SOC_LH: 0, Received: 0, Assigned: 0, OnHold: 0, total: 0 });
       }
       const bucket = stats.byDriver.get(driver);
       if (status === 'Delivered') bucket.Delivered += 1;
       if (status === 'Delivering') bucket.Delivering += 1;
+      if (status === 'SOC_LHTransported') bucket.SOC_LH += 1;
       if (isReceived(status)) bucket.Received += 1;
       if (isAssigned(status)) bucket.Assigned += 1;
       if (status === 'OnHold') bucket.OnHold += 1;
@@ -867,6 +888,7 @@
       ['Received', stats.received, 'Aguardando avanço', 'Hub_Received'],
       ['Assigned', stats.assigned, 'Atribuídos no hub', 'Hub_Assigned'],
       ['Delivering', stats.delivering, 'Em rota', 'Delivering'],
+      ['SOC LH', stats.socLH, 'Transportado no line haul', 'SOC_LHTransported'],
       ['OnHold', stats.hold, percent(stats.hold, stats.total), 'OnHold']
     ];
     els.kpis.innerHTML = items.map(([label, qty, hint, filter]) => `
@@ -938,6 +960,7 @@
       `Received: ${number(stats.received)}`,
       `Hub Assigned: ${number(stats.assigned)}`,
       `Delivering: ${number(stats.delivering)}`,
+      `SOC LH: ${number(stats.socLH)}`,
       `OnHold: ${number(stats.hold)}`,
       `Ritmo sugerido: ${number(perHour)} ${plural(perHour, 'pacote/hora', 'pacotes/hora')} por ${number(hoursLeft)} ${plural(hoursLeft, 'hora operacional restante', 'horas operacionais restantes')}`,
       '',
@@ -966,7 +989,8 @@
       ['OnHold', stats.hold, 'Pacotes precisam de tratativa operacional', 'critical', 'OnHold'],
       ['Received', stats.received, 'Pacotes aguardando avanço de status', 'high', 'Hub_Received'],
       ['Assigned', stats.assigned, 'Pacotes atribuídos ou em separação', 'normal', 'Hub_Assigned'],
-      ['Delivering', stats.delivering, 'Pacotes em rota para acompanhar', 'normal', 'Delivering']
+      ['Delivering', stats.delivering, 'Pacotes em rota para acompanhar', 'normal', 'Delivering'],
+      ['SOC LH', stats.socLH, 'Pacotes transportados no line haul', 'normal', 'SOC_LHTransported']
     ].filter(item => item[1] > 0);
 
     els.priorityList.innerHTML = rows.length ? rows.map(([title, qty, desc, severity, filter]) => `
@@ -995,6 +1019,7 @@
       notDelivered: 'Pendentes',
       Delivered: 'Delivered',
       Delivering: 'Delivering',
+      SOC_LHTransported: 'SOC LH',
       Hub_Received: 'Received - tratativa',
       Hub_Assigned: 'Hub Assigned',
       OnHold: 'OnHold'
@@ -1117,6 +1142,14 @@
         severity: 'normal'
       });
     }
+    if (stats.socLH > 0) {
+      items.push({
+        title: `Acompanhar SOC LH (${number(stats.socLH)})`,
+        detail: 'Pacotes transportados no line haul para seguir o avanço até rota ou baixa.',
+        filter: 'SOC_LHTransported',
+        severity: 'normal'
+      });
+    }
     snapshot.topCities.slice(0, 2).forEach(([city, qty]) => {
       items.push({
         title: `Focar ${city}`,
@@ -1152,7 +1185,7 @@
       `Total: ${number(snapshot.total)}`,
       `Delivered: ${number(snapshot.delivered)} (${snapshot.sla.toFixed(2).replace('.', ',')}%)`,
       `Pendentes: ${number(snapshot.pending)}`,
-      `Received: ${number(snapshot.received)} | Assigned: ${number(snapshot.assigned)} | Delivering: ${number(snapshot.delivering)} | OnHold: ${number(snapshot.hold)}`,
+      `Received: ${number(snapshot.received)} | Assigned: ${number(snapshot.assigned)} | Delivering: ${number(snapshot.delivering)} | SOC LH: ${number(snapshot.socLH)} | OnHold: ${number(snapshot.hold)}`,
       '',
       ...diff,
       '',
@@ -1171,6 +1204,7 @@
       ['Pendentes', snapshot.pending, deltaValue(snapshot, previous, 'pending')],
       ['Received', snapshot.received, deltaValue(snapshot, previous, 'received')],
       ['Assigned', snapshot.assigned, deltaValue(snapshot, previous, 'assigned')],
+      ['SOC LH', snapshot.socLH, deltaValue(snapshot, previous, 'socLH')],
       ['OnHold', snapshot.hold, deltaValue(snapshot, previous, 'hold')],
       ['SLA', snapshot.sla, previous ? snapshot.sla - previous.sla : null, 'p.p.']
     ];
@@ -1205,6 +1239,7 @@
         <span class="history-stat"><b>${number(item.pending)}</b><small>Pendentes</small></span>
         <span class="history-stat"><b>${number(item.received)}</b><small>Received</small></span>
         <span class="history-stat"><b>${number(item.assigned)}</b><small>Assigned</small></span>
+        <span class="history-stat"><b>${number(item.socLH)}</b><small>SOC LH</small></span>
         <span class="history-stat"><b>${number(item.hold)}</b><small>OnHold</small></span>
       </div>
     `).join('');
@@ -1242,13 +1277,14 @@
         <td>${html(driver)}</td>
         <td>${number(data.Delivered)}</td>
         <td>${number(data.Delivering)}</td>
+        <td>${number(data.SOC_LH)}</td>
         <td>${number(data.Received)}</td>
         <td>${number(data.Assigned)}</td>
         <td>${number(data.OnHold)}</td>
         <td>${number(data.total)}</td>
         <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'all', driver }))}'>Abrir</button></td>
       </tr>
-    `).join('') || '<tr><td colspan="8">Nenhum driver.</td></tr>';
+    `).join('') || '<tr><td colspan="9">Nenhum driver.</td></tr>';
   }
 
   function cepLookup(cep) {
@@ -1369,6 +1405,185 @@
     `).join('') || '<tr><td colspan="7">Nenhuma avaria cadastrada.</td></tr>';
   }
 
+  function routeStatsFor(rows) {
+    return rows.reduce((acc, row) => {
+      const status = statusOf(row);
+      acc.total += 1;
+      if (status === 'Delivered') acc.delivered += 1;
+      if (status === 'Delivering') acc.delivering += 1;
+      if (status === 'SOC_LHTransported') acc.socLH += 1;
+      if (status === 'OnHold') acc.hold += 1;
+      if (isReceived(status)) acc.received += 1;
+      if (isAssigned(status)) acc.assigned += 1;
+      return acc;
+    }, { total: 0, delivered: 0, received: 0, assigned: 0, delivering: 0, socLH: 0, hold: 0 });
+  }
+
+  function routePending(stats) {
+    return Math.max(stats.total - stats.delivered, 0);
+  }
+
+  function groupedRouteStats(rows, keyFn) {
+    const groups = new Map();
+    rows.forEach(row => {
+      const key = keyFn(row);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    });
+    return Array.from(groups.entries())
+      .map(([name, groupRows]) => ({ name, stats: routeStatsFor(groupRows) }))
+      .sort((a, b) => b.stats.total - a.stats.total || a.name.localeCompare(b.name, 'pt-BR'));
+  }
+
+  function routeCityDefaults(cityGroups) {
+    const defaultCities = ['Medeiros Neto', 'Nova Viçosa', 'Posto da Mata'];
+    const available = new Map(cityGroups.map(group => [removeAccents(group.name), group.name]));
+    const found = defaultCities.map(city => available.get(removeAccents(city))).filter(Boolean);
+    return found.length ? found : cityGroups.slice(0, 1).map(group => group.name);
+  }
+
+  function selectedRouteCities(cityGroups) {
+    const available = new Set(cityGroups.map(group => group.name));
+    let selected = (state.routeCities || []).filter(city => available.has(city));
+    if (!selected.length && state.routeCity && available.has(state.routeCity)) selected = [state.routeCity];
+    if (!selected.length && !state.routeSelectionTouched) selected = routeCityDefaults(cityGroups);
+    state.routeCities = selected;
+    state.routeCity = selected[0] || '';
+    return selected;
+  }
+
+  function setRouteCities(cities, touched = true) {
+    state.routeCities = Array.from(new Set(cities.filter(Boolean)));
+    state.routeCity = state.routeCities[0] || '';
+    state.routeSelectionTouched = touched;
+    renderRouteCalculator();
+  }
+
+  function bairroRouteGroups(rows) {
+    const groups = new Map();
+    rows.forEach(row => {
+      const city = value(row, 'city');
+      const bairro = value(row, 'bairro');
+      const key = groupKey([city, bairro]);
+      if (!groups.has(key)) groups.set(key, { city, bairro, rows: [] });
+      groups.get(key).rows.push(row);
+    });
+    return Array.from(groups.values())
+      .map(group => ({ ...group, stats: routeStatsFor(group.rows) }))
+      .sort((a, b) => b.stats.total - a.stats.total || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'));
+  }
+
+  function renderRouteSummary(stats, selectedCities) {
+    const totalLabel = selectedCities.length === 1 ? 'Total da cidade' : 'Total das cidades';
+    const cards = [
+      [totalLabel, stats.total, 'Pacotes importados do dia'],
+      ['Delivered', stats.delivered, `${percent(stats.delivered, stats.total)} finalizado`],
+      ['Pendentes', routePending(stats), 'Ainda exigem acompanhamento'],
+      ['Received', stats.received, 'No hub ou avaria cadastrada'],
+      ['Assigned', stats.assigned, 'Atribuídos/separação'],
+      ['Delivering', stats.delivering, 'Em rota'],
+      ['SOC LH', stats.socLH, 'Transportado no line haul'],
+      ['OnHold', stats.hold, 'Com tratativa operacional']
+    ];
+    els.routeSummary.innerHTML = stats.total ? cards.map(([label, qty, note], index) => `
+      <article class="route-card route-card-${index + 1}">
+        <span>${html(label)}</span>
+        <strong>${number(qty)}</strong>
+        <small>${html(note)}</small>
+      </article>
+    `).join('') : `
+      <div class="empty-route">
+        <strong>Nenhuma rota carregada.</strong>
+        <span>Importe a planilha do dia ou selecione uma ou mais cidades.</span>
+      </div>
+    `;
+  }
+
+  function renderRouteCalculator() {
+    const rows = state.rows;
+    const cityGroups = groupedRouteStats(rows, row => value(row, 'city'));
+    const selectedCities = selectedRouteCities(cityGroups);
+    const selectedSet = new Set(selectedCities);
+    els.routeCityChecklist.innerHTML = cityGroups.length ? cityGroups.map(group => {
+      const checked = selectedSet.has(group.name) ? 'checked' : '';
+      return `
+        <label class="route-city-option">
+          <input type="checkbox" data-route-city-check value="${html(group.name)}" ${checked}>
+          <span>${html(group.name)}</span>
+          <b>${number(group.stats.total)}</b>
+        </label>
+      `;
+    }).join('') : '<p class="muted">Importe a planilha do dia para listar as cidades.</p>';
+
+    const selectedRows = rows.filter(row => selectedSet.has(value(row, 'city')));
+    const selectedStats = routeStatsFor(selectedRows);
+    renderRouteSummary(selectedStats, selectedCities);
+
+    const bairroGroups = bairroRouteGroups(selectedRows);
+    els.routeBairroTable.innerHTML = bairroGroups.length ? bairroGroups.map(group => {
+      const stats = group.stats;
+      return `
+        <tr>
+          <td>${html(group.city)} / ${html(group.bairro)}</td>
+          <td>${number(stats.total)}</td>
+          <td>${number(stats.delivered)}</td>
+          <td>${number(stats.received)}</td>
+          <td>${number(stats.assigned)}</td>
+          <td>${number(stats.delivering)}</td>
+          <td>${number(stats.socLH)}</td>
+          <td>${number(stats.hold)}</td>
+          <td>${number(routePending(stats))}</td>
+          <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'all', city: group.city, bairro: group.bairro }))}'>Abrir</button></td>
+        </tr>
+      `;
+    }).join('') : '<tr><td colspan="10">Escolha uma ou mais cidades após importar a planilha.</td></tr>';
+
+    els.routeCityTable.innerHTML = cityGroups.length ? cityGroups.map(group => {
+      const stats = group.stats;
+      const selected = selectedSet.has(group.name);
+      return `
+        <tr>
+          <td>${html(group.name)}</td>
+          <td>${number(stats.total)}</td>
+          <td>${number(stats.delivered)}</td>
+          <td>${number(stats.received)}</td>
+          <td>${number(stats.assigned)}</td>
+          <td>${number(stats.delivering)}</td>
+          <td>${number(stats.socLH)}</td>
+          <td>${number(stats.hold)}</td>
+          <td>${number(routePending(stats))}</td>
+          <td><button class="mini-button" data-route-city="${html(group.name)}">${selected ? 'Remover' : 'Adicionar'}</button></td>
+        </tr>
+      `;
+    }).join('') : '<tr><td colspan="10">Nenhuma cidade carregada.</td></tr>';
+  }
+
+  function copyRouteSummary() {
+    const selectedSet = new Set(state.routeCities || []);
+    const city = state.routeCities.length ? state.routeCities.join(', ') : 'Sem cidade selecionada';
+    const rows = state.rows.filter(row => selectedSet.has(value(row, 'city')));
+    const stats = routeStatsFor(rows);
+    const bairros = bairroRouteGroups(rows).slice(0, 20);
+    const text = [
+      `ROTA - ${city}`,
+      `Total: ${number(stats.total)}`,
+      `Delivered: ${number(stats.delivered)}`,
+      `Pendentes: ${number(routePending(stats))}`,
+      `Received: ${number(stats.received)}`,
+      `Assigned: ${number(stats.assigned)}`,
+      `Delivering: ${number(stats.delivering)}`,
+      `SOC LH: ${number(stats.socLH)}`,
+      `OnHold: ${number(stats.hold)}`,
+      '',
+      'Cidades selecionadas:',
+      ...(state.routeCities.length ? state.routeCities.map(item => `- ${item}`) : ['- Nenhuma cidade selecionada']),
+      '',
+      'Cidade/Bairro:',
+      ...(bairros.length ? bairros.map(group => `- ${group.city} / ${group.bairro}: ${number(group.stats.total)} total | ${number(routePending(group.stats))} pendentes`) : ['- Nenhum bairro carregado'])
+    ].join('\n');
+    navigator.clipboard?.writeText(text);
+  }
+
   function renderAll() {
     const stats = summarize();
     renderColumnReview();
@@ -1383,6 +1598,7 @@
     renderQuality();
     renderTables(stats);
     renderDamageView();
+    renderRouteCalculator();
     renderSearch();
     els.emptyState.classList.toggle('hidden', stats.total > 0);
     els.lastUpdate.textContent = stats.total ? new Date().toLocaleString('pt-BR') : 'Aguardando importação';
@@ -1409,6 +1625,9 @@
     state.rows = allRows;
     state.importId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     state.importFiles = Array.from(files).map(file => file.name);
+    state.routeCities = [];
+    state.routeCity = '';
+    state.routeSelectionTouched = false;
     ensureRowIds();
     clearFilters();
     state.headers = detectHeaders(allRows);
@@ -1558,7 +1777,7 @@
   }
 
   function exportHistory() {
-    const header = ['Data', 'Arquivos', 'Total', 'Delivered', 'Pendentes', 'Received', 'Assigned', 'Delivering', 'OnHold', 'SLA'];
+    const header = ['Data', 'Arquivos', 'Total', 'Delivered', 'Pendentes', 'Received', 'Assigned', 'Delivering', 'SOC LH', 'OnHold', 'SLA'];
     const body = state.history.map(item => [
       new Date(item.date).toLocaleString('pt-BR'),
       item.files.join(' | '),
@@ -1568,6 +1787,7 @@
       item.received,
       item.assigned,
       item.delivering,
+      item.socLH || 0,
       item.hold,
       item.sla.toFixed(2).replace('.', ',') + '%'
     ]);
@@ -1693,6 +1913,16 @@
       const removeDamageButton = event.target.closest('[data-remove-damage]');
       if (removeDamageButton) removeDamageEntry(removeDamageButton.dataset.removeDamage);
 
+      const routeCityButton = event.target.closest('[data-route-city]');
+      if (routeCityButton) {
+        const city = routeCityButton.dataset.routeCity;
+        const selected = new Set(state.routeCities || []);
+        if (selected.has(city)) selected.delete(city);
+        else selected.add(city);
+        setRouteCities(Array.from(selected));
+        setView('route');
+      }
+
       const viewJump = event.target.closest('[data-view-jump]');
       if (viewJump) setView(viewJump.dataset.viewJump);
 
@@ -1703,6 +1933,14 @@
     document.body.addEventListener('change', event => {
       const statusSelect = event.target.closest('[data-status-row]');
       if (statusSelect) updateReceivedAction(statusSelect.dataset.statusRow, statusSelect.value);
+
+      const routeCheck = event.target.closest('[data-route-city-check]');
+      if (routeCheck) {
+        const selected = new Set(state.routeCities || []);
+        if (routeCheck.checked) selected.add(routeCheck.value);
+        else selected.delete(routeCheck.value);
+        setRouteCities(Array.from(selected));
+      }
     });
 
     document.body.addEventListener('input', event => {
@@ -1721,12 +1959,22 @@
       event.preventDefault();
       addDamageEntry();
     });
+    els.routeDefaultBtn.addEventListener('click', () => {
+      const cityGroups = groupedRouteStats(state.rows, row => value(row, 'city'));
+      setRouteCities(routeCityDefaults(cityGroups));
+    });
+    els.routeAllBtn.addEventListener('click', () => {
+      const cityGroups = groupedRouteStats(state.rows, row => value(row, 'city'));
+      setRouteCities(cityGroups.map(group => group.name));
+    });
+    els.routeClearBtn.addEventListener('click', () => setRouteCities([]));
     els.searchInput.addEventListener('input', renderSearch);
     els.modalSearch.addEventListener('input', renderModalRows);
     els.copyRowsBtn.addEventListener('click', () => copyRows(state.currentRows));
     els.copySummaryBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar o resumo.'));
     els.copyMissionBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar a missão.'));
     els.copyMapBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.mapSummary || 'Importe os arquivos para gerar o mapa operacional.'));
+    els.copyRouteBtn.addEventListener('click', copyRouteSummary);
     els.copyManagerBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.managerText || 'Importe os arquivos para gerar o resumo gerencial.'));
     els.copyActionPlanBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.actionPlanText || 'Importe os arquivos para gerar o plano de ação.'));
     els.downloadPendingBtn.addEventListener('click', downloadPending);
