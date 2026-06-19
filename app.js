@@ -16,6 +16,7 @@
   const SUPABASE_KEY = 'sb_publishable_5W-VMD2kk7OmRP1vpEYJ4g_TZCUB93g';
   const CLOUD_TABLE = 'dashboard_state';
   const CLOUD_ID = 'torre-controle-txf-latest';
+  let cloudSaveTimer = null;
 
   const state = {
     rows: [],
@@ -583,6 +584,12 @@
       console.warn('saveCloudState', error);
       return false;
     }
+  }
+
+  function scheduleCloudSave(delay = 900) {
+    if (!state.rows.length) return;
+    window.clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = window.setTimeout(() => saveCloudState(), delay);
   }
 
   async function loadCloudState(options = {}) {
@@ -2271,6 +2278,7 @@
     applyTreatmentRegistryToRows();
     renderAll();
     setView('columns');
+    await saveCloudState();
   }
 
   async function handleLhFiles(files) {
@@ -2402,6 +2410,7 @@
     rememberTreatment(row);
     renderReceivedMonitor();
     if (row.__txfDamage) renderDamageView();
+    scheduleCloudSave();
   }
 
   function rowSearchText(row) {
