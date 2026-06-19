@@ -1680,24 +1680,40 @@
 
     const filtered = cityRows.filter(row => !state.receivedMonitor.bairro || value(row, 'bairro') === state.receivedMonitor.bairro);
     const grouped = new Map();
-    filtered.forEach(row => bump(grouped, groupKey([value(row, 'city'), value(row, 'bairro')])));
+    filtered.forEach(row => {
+      const key = groupKey([value(row, 'city'), value(row, 'bairro')]);
+      if (!grouped.has(key)) grouped.set(key, { qty: 0, treatments: new Map() });
+      const data = grouped.get(key);
+      data.qty += 1;
+      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || '');
+      if (treatment) data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
+    });
     const direction = state.receivedMonitor.sort === 'asc' ? 1 : -1;
 
     els.receivedTable.innerHTML = Array.from(grouped.entries())
-      .map(([key, qty]) => {
+      .map(([key, data]) => {
         const [city, bairro] = key.split('|');
-        return { city, bairro, qty };
+        return { city, bairro, qty: data.qty, treatment: formatGroupTreatments(data.treatments) };
       })
       .sort((a, b) => (a.qty - b.qty) * direction || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'))
       .map(item => `<tr class="clickable">
         <td>${html(item.city)}</td>
         <td>${html(item.bairro)}</td>
+        <td class="treatment-summary">${html(item.treatment)}</td>
         <td>${number(item.qty)}</td>
         <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'Hub_Received', city: item.city, bairro: item.bairro }))}'>Abrir</button></td>
       </tr>`)
-      .join('') || '<tr><td colspan="4">Nenhum Received encontrado.</td></tr>';
+      .join('') || '<tr><td colspan="5">Nenhum Received encontrado.</td></tr>';
 
     renderReceivedSearch(filtered);
+  }
+
+  function formatGroupTreatments(treatments) {
+    const items = Array.from(treatments.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'));
+    if (!items.length) return 'Sem tratativa';
+    const visible = items.slice(0, 2).map(([text, qty]) => qty > 1 ? `${text} (${number(qty)})` : text);
+    const extra = items.length > 2 ? ` +${number(items.length - 2)}` : '';
+    return visible.join(' | ') + extra;
   }
 
   function renderReceivedSearch(rows) {

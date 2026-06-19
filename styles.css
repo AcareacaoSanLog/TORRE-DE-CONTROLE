@@ -1196,6 +1196,13 @@ button { cursor: pointer; }
   outline: 0;
 }
 
+.treatment-summary {
+  max-width: 360px;
+  color: var(--muted);
+  white-space: normal;
+  line-height: 1.35;
+}
+
 .comparison-grid {
   display: grid;
   gap: 8px;
