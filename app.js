@@ -1,5 +1,17 @@
 (function () {
   const cepMap = window.TXF_CEP_MAP || {};
+  const driverDb = window.TXF_DRIVER_DB || { byId: {}, byName: {} };
+  const manualDriverCorrections = {
+    3839315: { id: '3839315', name: 'RYAN NUNES' },
+    702410: { id: '702410', name: 'LUIS ROBERTO CIRQUEIRA SAMPAIO' },
+    2074147: { id: '2074147', name: 'RAIQUE DE JESUS SANTOS' },
+    2527410: { id: '2527410', name: 'LARIANE SILVA SANTANA' },
+    2551853: { id: '2551853', name: 'LUIS EDUARDO PORTO PINHEIRO' },
+    2375728: { id: '2375728', name: 'GUSTAVO FERREIRA SANTOS' },
+    2140415: { id: '2140415', name: 'PAULO RICARDO LIMA DE JESUS' },
+    2066856: { id: '2066856', name: 'NATASHA GOMES LOPES' },
+    2139717: { id: '2139717', name: 'PAULO HENRIQUE NOVAIS NUNES' }
+  };
   const SUPABASE_URL = 'https://ionlbxgwaqyracpztoiv.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_5W-VMD2kk7OmRP1vpEYJ4g_TZCUB93g';
   const CLOUD_TABLE = 'dashboard_state';
@@ -66,6 +78,7 @@
     missionList: document.getElementById('missionList'),
     receivedTable: document.getElementById('receivedTable'),
     assignedTable: document.getElementById('assignedTable'),
+    assignedDriverTable: document.getElementById('assignedDriverTable'),
     damageForm: document.getElementById('damageForm'),
     damageTracking: document.getElementById('damageTracking'),
     damageCep: document.getElementById('damageCep'),
@@ -102,6 +115,8 @@
     comparisonCards: document.getElementById('comparisonCards'),
     actionPlan: document.getElementById('actionPlan'),
     historyList: document.getElementById('historyList'),
+    historyEvolution: document.getElementById('historyEvolution'),
+    historyCityChanges: document.getElementById('historyCityChanges'),
     copyManagerBtn: document.getElementById('copyManagerBtn'),
     copyActionPlanBtn: document.getElementById('copyActionPlanBtn'),
     exportHistoryBtn: document.getElementById('exportHistoryBtn'),
@@ -117,18 +132,22 @@
     exportIssuesBtn: document.getElementById('exportIssuesBtn'),
     toolsToggle: document.getElementById('toolsToggle'),
     toolsMenu: document.getElementById('toolsMenu'),
+    monitorToggle: document.getElementById('monitorToggle'),
+    monitorMenu: document.getElementById('monitorMenu'),
     cloudStatus: document.getElementById('cloudStatus'),
     loadCloudBtn: document.getElementById('loadCloudBtn'),
     saveCloudBtn: document.getElementById('saveCloudBtn')
   };
 
   const HISTORY_KEY = 'txf-plus-import-history-v1';
+  const HISTORY_LIMIT = 120;
 
   const columnHints = {
     status: ['status', 'shipment status', 'current status', 'delivery status', 'station status'],
     city: ['cidade', 'city', 'buyer city', 'receiver city', 'recipient city'],
     bairro: ['bairro', 'district', 'neighborhood', 'receiver district', 'recipient district'],
-    driver: ['driver name', 'driver', 'motorista', 'nome do motorista'],
+    driverId: ['driver id', 'driver_id', 'driverid', 'id driver', 'id motorista', 'motorista id'],
+    driver: ['driver name', 'nome do motorista', 'motorista', 'driver'],
     tracking: ['sls tracking', 'tracking', 'rastreio', 'awb', 'br', 'order id', 'shipment id'],
     cep: ['zipcode name', 'zipcode', 'zip code', 'cep', 'postal code', 'coluna 1']
   };
@@ -139,6 +158,7 @@
     cep: 'CEP',
     city: 'Cidade',
     bairro: 'Bairro',
+    driverId: 'Driver ID',
     driver: 'Driver'
   };
 
@@ -200,6 +220,28 @@
     return clean(value).toLowerCase();
   }
 
+  function normalizeTextKey(value) {
+    return low(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+  }
+
+  function driverIdKey(value) {
+    const text = clean(value).replaceAll("'", '').replace(',', '.');
+    if (!text) return '';
+    const numeric = Number(text);
+    if (Number.isFinite(numeric)) return String(Math.trunc(numeric));
+    return text.replace(/\D/g, '');
+  }
+
+  function driverRecordById(driverId) {
+    const key = driverIdKey(driverId);
+    return manualDriverCorrections[key] || driverDb.byId?.[key] || null;
+  }
+
+  function driverRecordByName(name) {
+    const id = driverDb.byName?.[normalizeTextKey(name)];
+    return id ? driverRecordById(id) : null;
+  }
+
   function html(value) {
     return clean(value).replace(/[&<>"']/g, char => ({
       '&': '&amp;',
@@ -229,14 +271,14 @@
   function loadHistory() {
     try {
       const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-      state.history = Array.isArray(parsed) ? parsed.slice(0, 30) : [];
+      state.history = Array.isArray(parsed) ? parsed.slice(0, HISTORY_LIMIT) : [];
     } catch (error) {
       state.history = [];
     }
   }
 
   function persistHistory() {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, 30)));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, HISTORY_LIMIT)));
   }
 
   function previousSnapshot() {
@@ -245,6 +287,7 @@
 
   function createSnapshot(stats) {
     const topCities = Array.from(stats.byCityPending.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const cityCritical = cityCriticalSnapshot(stats);
     const topRegions = Array.from(stats.byRegion.entries()).map(([name, data]) => ({
       name,
       pending: data.pending,
@@ -271,15 +314,56 @@
       sla,
       ds: sla,
       topCities,
+      cityCritical,
       topRegions
     };
+  }
+
+  function criticalScore(data) {
+    return Number(data?.received || 0) + Number(data?.assigned || 0) + Number(data?.socLH || 0) + Number(data?.hold || 0);
+  }
+
+  function cityCriticalSnapshot(stats) {
+    const cities = new Map();
+    const ensureCity = city => {
+      if (!cities.has(city)) {
+        cities.set(city, {
+          city,
+          total: stats.byCity.get(city) || 0,
+          pending: stats.byCityPending.get(city) || 0,
+          received: 0,
+          assigned: 0,
+          socLH: 0,
+          hold: 0
+        });
+      }
+      return cities.get(city);
+    };
+
+    stats.byCity.forEach((qty, city) => {
+      const entry = ensureCity(city);
+      entry.total = qty;
+    });
+
+    stats.byCityStatus.forEach((qty, key) => {
+      const [status, city] = key.split('|');
+      const entry = ensureCity(city);
+      if (isReceived(status)) entry.received += qty;
+      if (isAssigned(status)) entry.assigned += qty;
+      if (status === 'SOC_LHTransported') entry.socLH += qty;
+      if (status === 'OnHold') entry.hold += qty;
+    });
+
+    return Array.from(cities.values())
+      .map(entry => ({ ...entry, critical: criticalScore(entry) }))
+      .sort((a, b) => b.critical - a.critical || b.pending - a.pending || a.city.localeCompare(b.city, 'pt-BR'));
   }
 
   function saveCurrentImport() {
     const fullStats = summarizeRows(state.rows);
     if (!fullStats.total) return;
     const snapshot = createSnapshot(fullStats);
-    state.history = [snapshot].concat(state.history.filter(item => item.id !== snapshot.id)).slice(0, 30);
+    state.history = [snapshot].concat(state.history.filter(item => item.id !== snapshot.id)).slice(0, HISTORY_LIMIT);
     persistHistory();
     state.stats = summarize();
   }
@@ -319,6 +403,7 @@
       cep: cepOf(row),
       city: value(row, 'city'),
       bairro: value(row, 'bairro'),
+      driverId: value(row, 'driverId'),
       driver: value(row, 'driver'),
       __file: row.__file || '',
       __sheet: row.__sheet || '',
@@ -342,17 +427,45 @@
     }]));
   }
 
+  function normalizedHistory() {
+    return (state.history || []).slice(0, HISTORY_LIMIT).map(item => ({
+      ...item,
+      files: Array.isArray(item.files) ? item.files : [],
+      topCities: Array.isArray(item.topCities) ? item.topCities : [],
+      topRegions: Array.isArray(item.topRegions) ? item.topRegions : [],
+      cityCritical: Array.isArray(item.cityCritical) ? item.cityCritical : []
+    }));
+  }
+
+  function applyHistoryFromCloud(history) {
+    if (!Array.isArray(history)) return;
+    const byId = new Map();
+    normalizedHistory().concat(history).forEach(item => {
+      if (!item?.id) return;
+      byId.set(item.id, {
+        ...item,
+        socLH: Number(item.socLH || 0),
+        cityCritical: Array.isArray(item.cityCritical) ? item.cityCritical : []
+      });
+    });
+    state.history = Array.from(byId.values())
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, HISTORY_LIMIT);
+    persistHistory();
+  }
+
   function applyCloudRows(payload) {
     const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     state.rows = rows;
     state.damageRegistry = payload?.damageRegistry || buildDamageRegistryFromRows(rows);
-    state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'driver'];
+    state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'driverId', 'driver'];
     state.detectedColumns = {
       tracking: 'tracking',
       status: 'status',
       cep: 'cep',
       city: 'city',
       bairro: 'bairro',
+      driverId: 'driverId',
       driver: 'driver'
     };
     state.columns = { ...state.detectedColumns };
@@ -361,6 +474,7 @@
     state.routeCities = [];
     state.routeCity = '';
     state.routeSelectionTouched = false;
+    applyHistoryFromCloud(payload?.history);
     ensureRowIds();
     applyDamageRegistryToRows();
     clearFilters();
@@ -377,7 +491,8 @@
       savedAt: new Date().toISOString(),
       files: state.importFiles.slice(),
       rows: normalizedCloudRows(),
-      damageRegistry: normalizedDamageRegistry()
+      damageRegistry: normalizedDamageRegistry(),
+      history: normalizedHistory()
     };
 
     setCloudStatus('Nuvem: salvando última importação...', 'warn');
@@ -507,9 +622,27 @@
     rows.slice(0, 30).forEach(row => Object.keys(row || {}).forEach(key => headers.add(key)));
     const keys = Array.from(headers);
     return Object.fromEntries(Object.entries(columnHints).map(([type, hints]) => {
-      const found = keys.find(key => hints.some(hint => low(key).includes(hint)));
+      const found = findColumn(keys, type, hints);
       return [type, found || ''];
     }));
+  }
+
+  function findColumn(keys, type, hints) {
+    const normalized = keys.map(key => ({ key, low: low(key) }));
+    const exact = normalized.find(item => hints.some(hint => item.low === hint));
+    if (exact) return exact.key;
+    if (type === 'driver') {
+      const nameColumn = normalized.find(item => /driver\s*name|nome.*motorista|motorista.*nome/.test(item.low));
+      if (nameColumn) return nameColumn.key;
+      const generic = normalized.find(item => item.low.includes('driver') && !item.low.includes('id'));
+      if (generic) return generic.key;
+    }
+    if (type === 'driverId') {
+      const idColumn = normalized.find(item => item.low.includes('driver') && item.low.includes('id'));
+      if (idColumn) return idColumn.key;
+    }
+    const partial = normalized.find(item => hints.some(hint => item.low.includes(hint)));
+    return partial?.key || '';
   }
 
   function detectHeaders(rows) {
@@ -539,7 +672,7 @@
       return cep && !cepMap[cep] && (!raw(row, 'city') || !raw(row, 'bairro'));
     }).length;
     const missingTracking = state.rows.filter(row => !raw(row, 'tracking')).length;
-    const missingDriver = state.rows.filter(row => !raw(row, 'driver')).length;
+    const missingDriver = state.rows.filter(row => value(row, 'driver') === 'Sem driver').length;
     return { total, missingCep, unmappedCep, missingTracking, missingDriver };
   }
 
@@ -583,7 +716,7 @@
       } else if (!cepMap[cep] && (!raw(row, 'city') || !raw(row, 'bairro'))) {
         issues.push({ type: 'CEP sem mapa', title: cep, detail: `${tracking} | ${city}`, filter: { tracking } });
       }
-      if (!raw(row, 'driver')) {
+      if (value(row, 'driver') === 'Sem driver') {
         issues.push({ type: 'Driver vazio', title: tracking, detail: `${status} | ${city}`, filter: { tracking } });
       }
       if (!statusConfig[status] && !['LMHub_Packed', 'SOC_LHTransported', '(vazio)'].includes(status)) {
@@ -681,6 +814,7 @@
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
+        <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
         <td>${html(row.__file || '')}</td>
       </tr>
@@ -712,6 +846,31 @@
     return clean((key ? row[key] : '') || row[type] || '');
   }
 
+  function driverIdOf(row) {
+    const explicit = driverIdKey(raw(row, 'driverId'));
+    if (explicit) return explicit;
+    const driverRaw = raw(row, 'driver');
+    const asId = driverIdKey(driverRaw);
+    return driverRecordById(asId) ? asId : '';
+  }
+
+  function driverInfo(row) {
+    const id = driverIdOf(row);
+    const byId = id ? driverRecordById(id) : null;
+    const rawDriver = raw(row, 'driver');
+    const byName = rawDriver ? driverRecordByName(rawDriver) : null;
+    const record = byId || byName || null;
+    const driverName = record?.name || (driverRecordById(driverIdKey(rawDriver))?.name) || rawDriver || 'Sem driver';
+    return {
+      id: record?.id || id || '',
+      name: driverName,
+      vehicleType: record?.vehicleType || '',
+      licensePlate: record?.licensePlate || '',
+      city: record?.city || value(row, 'city'),
+      known: Boolean(record)
+    };
+  }
+
   function cepOf(row) {
     const digits = clean(raw(row, 'cep')).replace(/\D/g, '');
     return digits ? digits.padStart(8, '0').slice(-8) : '';
@@ -723,8 +882,11 @@
       const fallback = type === 'city' ? 'Sem cidade' : 'Sem bairro';
       return raw(row, type) || mapped[type === 'city' ? 'cidade' : 'bairro'] || fallback;
     }
+    if (type === 'driver') return driverInfo(row).name;
+    if (type === 'driverId') return driverInfo(row).id || 'Sem ID';
     const fallbacks = {
       driver: 'Sem driver',
+      driverId: 'Sem ID',
       tracking: 'Sem tracking',
       status: '(vazio)',
       cep: 'Sem CEP'
@@ -805,6 +967,7 @@
       byReceived: new Map(),
       byAssigned: new Map(),
       byAssignedCity: new Map(),
+      byAssignedDriver: new Map(),
       byCityStatus: new Map(),
       byCity: new Map(),
       byDeliveredCity: new Map(),
@@ -837,6 +1000,12 @@
         stats.assigned += 1;
         bump(stats.byAssigned, cityBairro);
         bump(stats.byAssignedCity, city);
+        const driver = driverInfo(row);
+        const driverKey = groupKey([driver.id || 'Sem ID', driver.name, driver.vehicleType || '-', driver.city || city]);
+        if (!stats.byAssignedDriver.has(driverKey)) {
+          stats.byAssignedDriver.set(driverKey, { ...driver, total: 0 });
+        }
+        stats.byAssignedDriver.get(driverKey).total += 1;
       }
 
       bump(stats.byCityStatus, groupKey([status, city, bairro]));
@@ -1228,7 +1397,111 @@
     return (delta > 0 && higherIsGood) || (delta < 0 && !higherIsGood) ? 'up' : 'down';
   }
 
+  function criticalMetrics() {
+    return [
+      { key: 'received', label: 'Received' },
+      { key: 'assigned', label: 'Assigned' },
+      { key: 'socLH', label: 'SOC LH' },
+      { key: 'hold', label: 'OnHold' }
+    ];
+  }
+
+  function renderHistoryInsights() {
+    if (!state.history.length) {
+      els.historyEvolution.innerHTML = '<p class="muted">Salve ao menos uma importação para acompanhar evolução.</p>';
+      els.historyCityChanges.innerHTML = '<p class="muted">Com duas importações, o painel mostra cidades que melhoraram ou pioraram.</p>';
+      return;
+    }
+
+    const timeline = state.history.slice(0, 8).reverse();
+    els.historyEvolution.innerHTML = criticalMetrics().map(metric => {
+      const values = timeline.map(item => Number(item[metric.key] || 0));
+      const max = Math.max(...values, 1);
+      const latest = Number(state.history[0]?.[metric.key] || 0);
+      const previous = state.history[1] ? Number(state.history[1][metric.key] || 0) : null;
+      const delta = previous === null ? null : latest - previous;
+      const tone = delta === null || delta === 0 ? 'flat' : delta < 0 ? 'up' : 'down';
+      return `
+        <article class="evolution-card">
+          <div class="evolution-title">
+            <span>${html(metric.label)}</span>
+            <strong>${number(latest)}</strong>
+            <b class="delta ${tone}">${html(signed(delta))}</b>
+          </div>
+          <div class="spark-bars" aria-label="Evolução de ${html(metric.label)}">
+            ${values.map(value => `<span style="height:${Math.max(8, value / max * 52)}px" title="${number(value)}"></span>`).join('')}
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    renderCityChanges(state.history[0], state.history[1]);
+  }
+
+  function cityCriticalMap(snapshot) {
+    return new Map((snapshot?.cityCritical || []).map(item => [item.city, {
+      ...item,
+      critical: Number(item.critical ?? criticalScore(item)),
+      pending: Number(item.pending || 0),
+      received: Number(item.received || 0),
+      assigned: Number(item.assigned || 0),
+      socLH: Number(item.socLH || 0),
+      hold: Number(item.hold || 0)
+    }]));
+  }
+
+  function renderCityChanges(current, previous) {
+    if (!current || !previous) {
+      els.historyCityChanges.innerHTML = '<p class="muted">Salve uma segunda importação para comparar cidades.</p>';
+      return;
+    }
+
+    const currentMap = cityCriticalMap(current);
+    const previousMap = cityCriticalMap(previous);
+    const cityNames = new Set([...currentMap.keys(), ...previousMap.keys()]);
+    const changes = Array.from(cityNames).map(city => {
+      const now = currentMap.get(city) || { city, critical: 0, pending: 0, received: 0, assigned: 0, socLH: 0, hold: 0 };
+      const before = previousMap.get(city) || { critical: 0, pending: 0 };
+      return {
+        ...now,
+        delta: Number(now.critical || 0) - Number(before.critical || 0),
+        pendingDelta: Number(now.pending || 0) - Number(before.pending || 0)
+      };
+    }).filter(item => item.delta !== 0 || item.pendingDelta !== 0);
+
+    const worse = changes.filter(item => item.delta > 0 || (item.delta === 0 && item.pendingDelta > 0))
+      .sort((a, b) => b.delta - a.delta || b.pendingDelta - a.pendingDelta)
+      .slice(0, 6);
+    const better = changes.filter(item => item.delta < 0 || (item.delta === 0 && item.pendingDelta < 0))
+      .sort((a, b) => a.delta - b.delta || a.pendingDelta - b.pendingDelta)
+      .slice(0, 6);
+
+    els.historyCityChanges.innerHTML = `
+      <div class="city-change-column">
+        <h5>Pioraram</h5>
+        ${renderCityChangeList(worse, 'down')}
+      </div>
+      <div class="city-change-column">
+        <h5>Melhoraram</h5>
+        ${renderCityChangeList(better, 'up')}
+      </div>
+    `;
+  }
+
+  function renderCityChangeList(items, tone) {
+    return items.length ? items.map(item => `
+      <button class="city-change ${tone}" type="button" data-open='${html(JSON.stringify({ kind: 'notDelivered', city: item.city }))}'>
+        <span>
+          <strong>${html(item.city)}</strong>
+          <small>R ${number(item.received)} | A ${number(item.assigned)} | SOC ${number(item.socLH)} | OH ${number(item.hold)}</small>
+        </span>
+        <b>${signed(item.delta)}</b>
+      </button>
+    `).join('') : '<div class="city-change empty"><span><strong>Nenhuma cidade</strong><small>Sem variação relevante.</small></span><b>0</b></div>';
+  }
+
   function renderHistory() {
+    renderHistoryInsights();
     if (!state.history.length) {
       els.historyList.innerHTML = '<div class="history-item"><strong>Nenhuma importação salva</strong><span>Aplique o mapeamento de colunas para salvar o primeiro histórico.</span></div>';
       return;
@@ -1262,6 +1535,23 @@
   function renderTables(stats) {
     els.receivedTable.innerHTML = mapRows(stats.byReceived, 'Hub_Received');
     els.assignedTable.innerHTML = mapRows(stats.byAssigned, 'Hub_Assigned');
+    els.assignedDriverTable.innerHTML = Array.from(stats.byAssignedDriver.entries())
+      .map(([key, data]) => {
+        const [driverId, driverName, vehicleType, city] = key.split('|');
+        return { driverId, driverName, vehicleType, city, total: data.total };
+      })
+      .sort((a, b) => b.total - a.total || a.driverName.localeCompare(b.driverName, 'pt-BR'))
+      .slice(0, 500)
+      .map(item => `
+        <tr>
+          <td>${html(item.driverId || 'Sem ID')}</td>
+          <td>${html(item.driverName || 'Sem driver')}</td>
+          <td>${html(item.vehicleType || '-')}</td>
+          <td>${html(item.city || '-')}</td>
+          <td>${number(item.total)}</td>
+          <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'Hub_Assigned', driver: item.driverName }))}'>Abrir</button></td>
+        </tr>
+      `).join('') || '<tr><td colspan="6">Nenhum Hub Assigned por driver.</td></tr>';
 
     els.cityTable.innerHTML = Array.from(stats.byCityStatus.entries()).sort((a, b) => b[1] - a[1]).slice(0, 500).map(([key, qty]) => {
       const [status, city, bairro] = key.split('|');
@@ -1691,12 +1981,12 @@
         <td>${html(value(row, 'driver'))}</td>
         <td>${html(row.__file || '')}</td>
       </tr>
-    `).join('') || '<tr><td colspan="7">Nada encontrado.</td></tr>';
+    `).join('') || '<tr><td colspan="8">Nada encontrado.</td></tr>';
   }
 
   function renderModalHeader() {
     const lastColumn = isReceivedActionModal() ? 'Tratativa' : 'Arquivo';
-    els.modalHeader.innerHTML = `<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver</th><th>${lastColumn}</th>`;
+    els.modalHeader.innerHTML = `<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th><th>${lastColumn}</th>`;
   }
 
   function isReceivedActionModal() {
@@ -1717,6 +2007,7 @@
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
+        <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
         <td>
           <textarea class="treatment-input" data-treatment-row="${html(row.__txfRowId || '')}" rows="2" placeholder="Descreva a tratativa realizada">${html(row.__txfTratativa || '')}</textarea>
@@ -1759,6 +2050,7 @@
       cepOf(row),
       value(row, 'city'),
       value(row, 'bairro'),
+      value(row, 'driverId'),
       value(row, 'driver'),
       row.__file,
       row.__sheet,
@@ -1776,7 +2068,7 @@
     const rows = state.rows.filter(row => low(rowSearchText(row)).includes(query)).slice(0, 80);
     els.searchResults.innerHTML = rows.map(row => `
       <button class="list-row" type="button" data-open='${html(JSON.stringify({ kind: 'all', tracking: value(row, 'tracking') }))}'>
-        <span><strong>${html(value(row, 'tracking'))}</strong><span>${html(statusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | ${html(value(row, 'driver'))}</span></span>
+        <span><strong>${html(value(row, 'tracking'))}</strong><span>${html(statusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span></span>
         <b class="severity normal">Abrir</b>
       </button>
     `).join('') || '<p class="muted">Nada encontrado.</p>';
@@ -1790,6 +2082,7 @@
       cepOf(row),
       value(row, 'city'),
       value(row, 'bairro'),
+      value(row, 'driverId'),
       value(row, 'driver'),
       row.__file || '',
       ...(includeTreatment ? [row.__txfStatusAction || '', row.__txfTratativa || ''] : [])
@@ -1862,13 +2155,14 @@
 
   function downloadRowsCsv(rows, filename) {
     const includeTreatment = rows.some(row => row.__txfTratativa || row.__txfStatusAction);
-    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver', 'Arquivo'].concat(includeTreatment ? ['Ação', 'Tratativa'] : []);
+    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver', 'Arquivo'].concat(includeTreatment ? ['Ação', 'Tratativa'] : []);
     const body = rows.map(row => [
       value(row, 'tracking'),
       statusOf(row),
       cepOf(row),
       value(row, 'city'),
       value(row, 'bairro'),
+      value(row, 'driverId'),
       value(row, 'driver'),
       row.__file || '',
       ...(includeTreatment ? [row.__txfStatusAction || '', row.__txfTratativa || ''] : [])
@@ -1890,6 +2184,7 @@
     document.querySelectorAll('.nav-button').forEach(button => {
       if (button.dataset.view) button.addEventListener('click', () => setView(button.dataset.view));
     });
+    els.monitorToggle.addEventListener('click', () => toggleMonitoring());
     els.toolsToggle.addEventListener('click', () => toggleTools());
 
     document.body.addEventListener('click', event => {
@@ -2078,6 +2373,7 @@
     const active = document.querySelector(`.nav-button[data-view="${id}"] span`);
     document.getElementById('viewTitle').textContent = active ? active.textContent : 'Dashboard';
     setToolsOpen(['history', 'search'].includes(id));
+    setMonitoringOpen(['received', 'assigned'].includes(id));
   }
 
   function toggleTools(force) {
@@ -2085,10 +2381,21 @@
     setToolsOpen(shouldOpen);
   }
 
+  function toggleMonitoring(force) {
+    const shouldOpen = typeof force === 'boolean' ? force : !els.monitorMenu.classList.contains('open');
+    setMonitoringOpen(shouldOpen);
+  }
+
   function setToolsOpen(open) {
     els.toolsMenu.classList.toggle('open', open);
     els.toolsToggle.classList.toggle('open', open);
     els.toolsToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  function setMonitoringOpen(open) {
+    els.monitorMenu.classList.toggle('open', open);
+    els.monitorToggle.classList.toggle('open', open);
+    els.monitorToggle.setAttribute('aria-expanded', String(open));
   }
 
   function refreshIcons() {

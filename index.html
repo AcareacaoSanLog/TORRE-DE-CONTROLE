@@ -21,12 +21,18 @@
 
       <nav class="nav">
         <button class="nav-button active" data-view="dashboard"><i data-lucide="layout-dashboard"></i><span>🏠 Dashboard</span></button>
+        <button class="nav-button tool-toggle" type="button" id="monitorToggle" aria-expanded="false">
+          <i data-lucide="boxes"></i><span>📦 Monitoramento</span><i data-lucide="chevron-down"></i>
+        </button>
+        <div class="tools-menu" id="monitorMenu">
+          <button class="nav-button sub" data-view="received"><i data-lucide="package-open"></i><span>📥 Received</span></button>
+          <button class="nav-button sub" data-view="assigned"><i data-lucide="tags"></i><span>🏷️ Assigned</span></button>
+        </div>
         <button class="nav-button" data-view="columns"><i data-lucide="columns-3"></i><span>📋 Colunas</span><b id="columnBadge" class="hidden">0</b></button>
         <button class="nav-button" data-view="mission"><i data-lucide="target"></i><span>🎯 Missão do dia</span><b id="missionBadge">0</b></button>
         <button class="nav-button" data-view="route"><i data-lucide="route"></i><span>🧭 Calcular rota</span></button>
         <button class="nav-button" data-view="quality"><i data-lucide="shield-alert"></i><span>🛡️ Qualidade</span><b id="qualityBadge">0</b></button>
         <button class="nav-button" data-view="manager"><i data-lucide="briefcase-business"></i><span>👤 Gestor</span></button>
-        <button class="nav-button" data-view="received"><i data-lucide="package-open"></i><span>📦 Received/Assigned</span></button>
         <button class="nav-button" data-view="damage"><i data-lucide="triangle-alert"></i><span>⚠️ Avarias</span></button>
         <button class="nav-button" data-view="cities"><i data-lucide="map-pin"></i><span>📍 Cidades</span></button>
         <button class="nav-button" data-view="drivers"><i data-lucide="truck"></i><span>🚚 Drivers</span></button>
@@ -232,6 +238,16 @@
               <button class="text-button danger" id="clearHistoryBtn">Limpar</button>
             </div>
           </div>
+          <div class="history-insights">
+            <div class="history-block">
+              <h4>Evolução dos status críticos</h4>
+              <div id="historyEvolution" class="history-evolution"></div>
+            </div>
+            <div class="history-block">
+              <h4>Cidades que mudaram</h4>
+              <div id="historyCityChanges" class="history-city-changes"></div>
+            </div>
+          </div>
           <div id="historyList" class="history-list"></div>
         </section>
       </section>
@@ -311,14 +327,21 @@
       </section>
 
       <section class="view" id="received">
+        <section class="panel">
+          <div class="panel-head"><h3>📥 BRs em Received por cidade/bairro</h3></div>
+          <div class="table-wrap tall"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="receivedTable"></tbody></table></div>
+        </section>
+      </section>
+
+      <section class="view" id="assigned">
         <div class="table-grid">
           <section class="panel">
-            <div class="panel-head"><h3>📥 BRs em Received por cidade/bairro</h3></div>
-            <div class="table-wrap"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="receivedTable"></tbody></table></div>
+            <div class="panel-head"><h3>🚚 Hub Assigned por driver</h3></div>
+            <div class="table-wrap tall"><table><thead><tr><th>Driver ID</th><th>Driver</th><th>Veículo</th><th>Cidade base</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedDriverTable"></tbody></table></div>
           </section>
           <section class="panel">
-            <div class="panel-head"><h3>🏷️ BRs em Assigned por cidade/bairro</h3></div>
-            <div class="table-wrap"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedTable"></tbody></table></div>
+            <div class="panel-head"><h3>🏷️ Hub Assigned por cidade/bairro</h3></div>
+            <div class="table-wrap tall"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedTable"></tbody></table></div>
           </section>
         </div>
       </section>
@@ -414,6 +437,7 @@
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/lucide.min.js"></script>
   <script src="cep-map.js"></script>
+  <script src="driver-db.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
