@@ -1887,3 +1887,36 @@ td {
   color: #ffc9c9;
   border-color: rgba(255, 71, 71, .55);
 }
+
+.brand {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 8px;
+}
+
+.brand .shopee-xpress {
+  width: 96px;
+  height: 22px;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
+  color: #ff3d1f;
+  background: transparent;
+  box-shadow: none;
+  font-family: Arial, "Segoe UI", sans-serif;
+  font-size: 18px;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.brand .shopee-xpress strong {
+  color: #ff3d1f;
+  font-size: 19px;
+  font-style: italic;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+}
