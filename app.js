@@ -80,6 +80,7 @@
     routeClearBtn: document.getElementById('routeClearBtn'),
     routeSummary: document.getElementById('routeSummary'),
     routeBairroTable: document.getElementById('routeBairroTable'),
+    routeSelectedCities: document.getElementById('routeSelectedCities'),
     routeCityTable: document.getElementById('routeCityTable'),
     copyRouteBtn: document.getElementById('copyRouteBtn'),
     cityTable: document.getElementById('cityTable'),
@@ -1537,6 +1538,25 @@
         </tr>
       `;
     }).join('') : '<tr><td colspan="10">Escolha uma ou mais cidades após importar a planilha.</td></tr>';
+
+    const selectedCityGroups = cityGroups.filter(group => selectedSet.has(group.name));
+    els.routeSelectedCities.innerHTML = selectedCityGroups.length ? `
+      <div class="route-selected-head">
+        <strong>Cidades selecionadas</strong>
+        <span>${number(selectedStats.total)} ${plural(selectedStats.total, 'pacote', 'pacotes')} no total</span>
+      </div>
+      <div class="route-selected-list">
+        ${selectedCityGroups.map(group => `
+          <button class="route-selected-city" type="button" data-route-city="${html(group.name)}" title="Remover ${html(group.name)} da rota">
+            <span>${html(group.name)}</span>
+            <strong>${number(group.stats.total)}</strong>
+            <small>${number(routePending(group.stats))} pendentes</small>
+          </button>
+        `).join('')}
+      </div>
+    ` : `
+      <div class="route-selected-empty">Nenhuma cidade selecionada.</div>
+    `;
 
     els.routeCityTable.innerHTML = cityGroups.length ? cityGroups.map(group => {
       const stats = group.stats;
