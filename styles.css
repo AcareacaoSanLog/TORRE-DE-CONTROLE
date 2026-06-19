@@ -1530,6 +1530,62 @@ tr.clickable:hover { background: var(--surface-2); }
   background: transparent;
 }
 
+.received-controls,
+.assigned-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) minmax(160px, .8fr) minmax(220px, 1.4fr);
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.received-controls label,
+.assigned-controls label {
+  display: grid;
+  gap: 6px;
+}
+
+.received-controls span,
+.assigned-controls span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.received-controls select,
+.received-controls input,
+.assigned-controls select,
+.assigned-controls input {
+  height: 40px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101820;
+  color: var(--text);
+  padding: 0 12px;
+  outline: 0;
+}
+
+.received-controls select:focus,
+.received-controls input:focus,
+.assigned-controls select:focus,
+.assigned-controls input:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
+}
+
+.received-results,
+.assigned-results {
+  margin-bottom: 12px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.received-results:empty,
+.assigned-results:empty {
+  display: none;
+}
+
 .modal {
   width: min(1180px, calc(100vw - 28px));
   max-height: calc(100vh - 28px);
@@ -1571,7 +1627,7 @@ tr.clickable:hover { background: var(--surface-2); }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .goal-panel { grid-template-columns: 96px 1fr; }
   .goal-panel .plain-action { grid-column: 1 / -1; width: 100%; }
-  .work-grid, .table-grid, .target-grid, .manager-grid, .damage-grid, .route-grid, .history-insights, .filter-bar { grid-template-columns: 1fr; }
+  .work-grid, .table-grid, .target-grid, .manager-grid, .damage-grid, .route-grid, .history-insights, .filter-bar, .received-controls, .assigned-controls { grid-template-columns: 1fr; }
   .operation-map { grid-template-columns: repeat(2, 1fr); }
   .column-grid { grid-template-columns: repeat(2, 1fr); }
   .quality-grid { grid-template-columns: repeat(2, 1fr); }

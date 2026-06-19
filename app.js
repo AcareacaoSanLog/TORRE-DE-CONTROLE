@@ -43,6 +43,18 @@
       driver: '',
       scope: ''
     },
+    receivedMonitor: {
+      city: '',
+      bairro: '',
+      sort: 'desc',
+      search: ''
+    },
+    assignedMonitor: {
+      city: '',
+      bairro: '',
+      sort: 'desc',
+      search: ''
+    },
     issues: []
   };
 
@@ -77,11 +89,21 @@
     missionBadge: document.getElementById('missionBadge'),
     missionList: document.getElementById('missionList'),
     receivedTable: document.getElementById('receivedTable'),
+    receivedCityFilter: document.getElementById('receivedCityFilter'),
+    receivedBairroFilter: document.getElementById('receivedBairroFilter'),
+    receivedSort: document.getElementById('receivedSort'),
+    receivedSearch: document.getElementById('receivedSearch'),
+    receivedSearchResults: document.getElementById('receivedSearchResults'),
     assignedTable: document.getElementById('assignedTable'),
-    assignedDriverTable: document.getElementById('assignedDriverTable'),
+    assignedCityFilter: document.getElementById('assignedCityFilter'),
+    assignedBairroFilter: document.getElementById('assignedBairroFilter'),
+    assignedSort: document.getElementById('assignedSort'),
+    assignedSearch: document.getElementById('assignedSearch'),
+    assignedSearchResults: document.getElementById('assignedSearchResults'),
     damageForm: document.getElementById('damageForm'),
     damageTracking: document.getElementById('damageTracking'),
-    damageCep: document.getElementById('damageCep'),
+    damageBulkTrackings: document.getElementById('damageBulkTrackings'),
+    damageCepPreview: document.getElementById('damageCepPreview'),
     damageTreatment: document.getElementById('damageTreatment'),
     damageCityPreview: document.getElementById('damageCityPreview'),
     damageBairroPreview: document.getElementById('damageBairroPreview'),
@@ -871,6 +893,11 @@
     };
   }
 
+  function hasDriverAssignment(row) {
+    const info = driverInfo(row);
+    return Boolean(info.id || (info.name && info.name !== 'Sem driver'));
+  }
+
   function cepOf(row) {
     const digits = clean(raw(row, 'cep')).replace(/\D/g, '');
     return digits ? digits.padStart(8, '0').slice(-8) : '';
@@ -916,6 +943,7 @@
     if (filter.city && value(row, 'city') !== filter.city) return false;
     if (filter.bairro && value(row, 'bairro') !== filter.bairro) return false;
     if (filter.driver && value(row, 'driver') !== filter.driver) return false;
+    if (filter.missingDriver && hasDriverAssignment(row)) return false;
     return true;
   }
 
@@ -968,6 +996,7 @@
       byAssigned: new Map(),
       byAssignedCity: new Map(),
       byAssignedDriver: new Map(),
+      byAssignedNoDriver: new Map(),
       byCityStatus: new Map(),
       byCity: new Map(),
       byDeliveredCity: new Map(),
@@ -1001,11 +1030,15 @@
         bump(stats.byAssigned, cityBairro);
         bump(stats.byAssignedCity, city);
         const driver = driverInfo(row);
-        const driverKey = groupKey([driver.id || 'Sem ID', driver.name, driver.vehicleType || '-', driver.city || city]);
-        if (!stats.byAssignedDriver.has(driverKey)) {
-          stats.byAssignedDriver.set(driverKey, { ...driver, total: 0 });
+        if (hasDriverAssignment(row)) {
+          const driverKey = groupKey([driver.id || 'Sem ID', driver.name, driver.vehicleType || '-', driver.city || city]);
+          if (!stats.byAssignedDriver.has(driverKey)) {
+            stats.byAssignedDriver.set(driverKey, { ...driver, total: 0 });
+          }
+          stats.byAssignedDriver.get(driverKey).total += 1;
+        } else {
+          bump(stats.byAssignedNoDriver, cityBairro);
         }
-        stats.byAssignedDriver.get(driverKey).total += 1;
       }
 
       bump(stats.byCityStatus, groupKey([status, city, bairro]));
@@ -1532,26 +1565,135 @@
     }).join('') || '<tr><td colspan="4">Nenhum pacote.</td></tr>';
   }
 
-  function renderTables(stats) {
-    els.receivedTable.innerHTML = mapRows(stats.byReceived, 'Hub_Received');
-    els.assignedTable.innerHTML = mapRows(stats.byAssigned, 'Hub_Assigned');
-    els.assignedDriverTable.innerHTML = Array.from(stats.byAssignedDriver.entries())
-      .map(([key, data]) => {
-        const [driverId, driverName, vehicleType, city] = key.split('|');
-        return { driverId, driverName, vehicleType, city, total: data.total };
+  function receivedMonitorRows() {
+    return visibleRows().filter(row => isReceived(statusOf(row)));
+  }
+
+  function renderReceivedMonitor() {
+    const rows = receivedMonitorRows();
+    const cityOptions = Array.from(new Set(rows.map(row => value(row, 'city'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.receivedMonitor.city && !cityOptions.includes(state.receivedMonitor.city)) {
+      state.receivedMonitor.city = '';
+    }
+    fillSelect(els.receivedCityFilter, [['', 'Todas']], cityOptions.map(item => [item, item]), state.receivedMonitor.city);
+
+    const cityRows = rows.filter(row => !state.receivedMonitor.city || value(row, 'city') === state.receivedMonitor.city);
+    const bairroOptions = Array.from(new Set(cityRows.map(row => value(row, 'bairro'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.receivedMonitor.bairro && !bairroOptions.includes(state.receivedMonitor.bairro)) {
+      state.receivedMonitor.bairro = '';
+    }
+    fillSelect(els.receivedBairroFilter, [['', 'Todos']], bairroOptions.map(item => [item, item]), state.receivedMonitor.bairro);
+    els.receivedSort.value = state.receivedMonitor.sort === 'asc' ? 'asc' : 'desc';
+    els.receivedSearch.value = state.receivedMonitor.search || '';
+
+    const filtered = cityRows.filter(row => !state.receivedMonitor.bairro || value(row, 'bairro') === state.receivedMonitor.bairro);
+    const grouped = new Map();
+    filtered.forEach(row => bump(grouped, groupKey([value(row, 'city'), value(row, 'bairro')])));
+    const direction = state.receivedMonitor.sort === 'asc' ? 1 : -1;
+
+    els.receivedTable.innerHTML = Array.from(grouped.entries())
+      .map(([key, qty]) => {
+        const [city, bairro] = key.split('|');
+        return { city, bairro, qty };
       })
-      .sort((a, b) => b.total - a.total || a.driverName.localeCompare(b.driverName, 'pt-BR'))
-      .slice(0, 500)
-      .map(item => `
-        <tr>
-          <td>${html(item.driverId || 'Sem ID')}</td>
-          <td>${html(item.driverName || 'Sem driver')}</td>
-          <td>${html(item.vehicleType || '-')}</td>
-          <td>${html(item.city || '-')}</td>
-          <td>${number(item.total)}</td>
-          <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'Hub_Assigned', driver: item.driverName }))}'>Abrir</button></td>
-        </tr>
-      `).join('') || '<tr><td colspan="6">Nenhum Hub Assigned por driver.</td></tr>';
+      .sort((a, b) => (a.qty - b.qty) * direction || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'))
+      .map(item => `<tr class="clickable">
+        <td>${html(item.city)}</td>
+        <td>${html(item.bairro)}</td>
+        <td>${number(item.qty)}</td>
+        <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'Hub_Received', city: item.city, bairro: item.bairro }))}'>Abrir</button></td>
+      </tr>`)
+      .join('') || '<tr><td colspan="4">Nenhum Received encontrado.</td></tr>';
+
+    renderReceivedSearch(filtered);
+  }
+
+  function renderReceivedSearch(rows) {
+    const query = low(state.receivedMonitor.search);
+    if (!query) {
+      els.receivedSearchResults.innerHTML = '';
+      return;
+    }
+    const matches = rows.filter(row => low(rowSearchText(row)).includes(query)).slice(0, 80);
+    els.receivedSearchResults.innerHTML = matches.map(row => `
+      <button class="list-row" type="button" data-open='${html(JSON.stringify({ kind: 'all', tracking: value(row, 'tracking') }))}'>
+        <span>
+          <strong>${html(value(row, 'tracking'))}</strong>
+          <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
+        </span>
+        <b class="severity high">Abrir</b>
+      </button>
+    `).join('') || '<p class="muted">Nenhuma BR em Received encontrada.</p>';
+  }
+
+  function assignedMonitorRows() {
+    return visibleRows().filter(row => isAssigned(statusOf(row)));
+  }
+
+  function renderAssignedMonitor() {
+    const rows = assignedMonitorRows();
+    const cityOptions = Array.from(new Set(rows.map(row => value(row, 'city'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.assignedMonitor.city && !cityOptions.includes(state.assignedMonitor.city)) {
+      state.assignedMonitor.city = '';
+    }
+    fillSelect(els.assignedCityFilter, [['', 'Todas']], cityOptions.map(item => [item, item]), state.assignedMonitor.city);
+
+    const cityRows = rows.filter(row => !state.assignedMonitor.city || value(row, 'city') === state.assignedMonitor.city);
+    const bairroOptions = Array.from(new Set(cityRows.map(row => value(row, 'bairro'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.assignedMonitor.bairro && !bairroOptions.includes(state.assignedMonitor.bairro)) {
+      state.assignedMonitor.bairro = '';
+    }
+    fillSelect(els.assignedBairroFilter, [['', 'Todos']], bairroOptions.map(item => [item, item]), state.assignedMonitor.bairro);
+    els.assignedSort.value = state.assignedMonitor.sort === 'asc' ? 'asc' : 'desc';
+    els.assignedSearch.value = state.assignedMonitor.search || '';
+
+    const filtered = cityRows.filter(row => !state.assignedMonitor.bairro || value(row, 'bairro') === state.assignedMonitor.bairro);
+    const grouped = new Map();
+    filtered.forEach(row => bump(grouped, groupKey([value(row, 'city'), value(row, 'bairro')])));
+    const direction = state.assignedMonitor.sort === 'asc' ? 1 : -1;
+
+    els.assignedTable.innerHTML = Array.from(grouped.entries())
+      .map(([key, qty]) => {
+        const [city, bairro] = key.split('|');
+        return { city, bairro, qty };
+      })
+      .sort((a, b) => (a.qty - b.qty) * direction || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'))
+      .map(item => `<tr class="clickable">
+        <td>${html(item.city)}</td>
+        <td>${html(item.bairro)}</td>
+        <td>${number(item.qty)}</td>
+        <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'Hub_Assigned', city: item.city, bairro: item.bairro }))}'>Abrir</button></td>
+      </tr>`)
+      .join('') || '<tr><td colspan="4">Nenhum Assigned encontrado.</td></tr>';
+
+    renderAssignedSearch(filtered);
+  }
+
+  function renderAssignedSearch(rows) {
+    const query = low(state.assignedMonitor.search);
+    if (!query) {
+      els.assignedSearchResults.innerHTML = '';
+      return;
+    }
+    const matches = rows.filter(row => low(rowSearchText(row)).includes(query)).slice(0, 80);
+    els.assignedSearchResults.innerHTML = matches.map(row => `
+      <button class="list-row" type="button" data-open='${html(JSON.stringify({ kind: 'all', tracking: value(row, 'tracking') }))}'>
+        <span>
+          <strong>${html(value(row, 'tracking'))}</strong>
+          <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
+        </span>
+        <b class="severity normal">Abrir</b>
+      </button>
+    `).join('') || '<p class="muted">Nenhuma BR em Assigned encontrada.</p>';
+  }
+
+  function renderTables(stats) {
+    renderReceivedMonitor();
+    renderAssignedMonitor();
 
     els.cityTable.innerHTML = Array.from(stats.byCityStatus.entries()).sort((a, b) => b[1] - a[1]).slice(0, 500).map(([key, qty]) => {
       const [status, city, bairro] = key.split('|');
@@ -1589,32 +1731,60 @@
     };
   }
 
+  function findDamageSourceRow(tracking) {
+    const key = trackingKey(tracking);
+    if (!key) return null;
+    return state.rows.find(row => trackingKey(value(row, 'tracking')) === key && row.__file !== 'Avaria manual')
+      || state.rows.find(row => trackingKey(value(row, 'tracking')) === key)
+      || null;
+  }
+
+  function damageLookupFromTracking(tracking) {
+    const row = findDamageSourceRow(tracking);
+    if (!row) return null;
+    return {
+      row,
+      cep: cepOf(row),
+      city: value(row, 'city'),
+      bairro: value(row, 'bairro')
+    };
+  }
+
   function updateDamagePreview() {
-    const lookup = cepLookup(els.damageCep.value);
-    const hasCep = clean(els.damageCep.value).replace(/\D/g, '').length >= 8;
-    els.damageCityPreview.textContent = hasCep ? lookup.city : 'Informe o CEP';
-    els.damageBairroPreview.textContent = hasCep ? lookup.bairro : 'Informe o CEP';
+    const tracking = clean(els.damageTracking.value);
+    if (!tracking) {
+      els.damageCepPreview.textContent = 'Digite a BR';
+      els.damageCityPreview.textContent = 'Digite a BR';
+      els.damageBairroPreview.textContent = 'Digite a BR';
+      return;
+    }
+    const lookup = damageLookupFromTracking(tracking);
+    if (!lookup) {
+      els.damageCepPreview.textContent = 'BR não encontrada';
+      els.damageCityPreview.textContent = 'Importe a planilha';
+      els.damageBairroPreview.textContent = 'ou confira a BR';
+      return;
+    }
+    els.damageCepPreview.textContent = lookup.cep || 'Sem CEP';
+    els.damageCityPreview.textContent = lookup.city || 'Sem cidade';
+    els.damageBairroPreview.textContent = lookup.bairro || 'Sem bairro';
   }
 
   function damageRows() {
     return state.rows.filter(row => row.__txfDamage);
   }
 
-  function addDamageEntry() {
-    const tracking = clean(els.damageTracking.value).toUpperCase();
-    const lookup = cepLookup(els.damageCep.value);
-    const treatment = clean(els.damageTreatment.value) || 'Avaria registrada';
+  function parseDamageTrackings() {
+    const single = clean(els.damageTracking.value);
+    const bulk = clean(els.damageBulkTrackings.value);
+    return Array.from(new Set([single, ...bulk.split(/[\s,;]+/)]
+      .map(item => clean(item).toUpperCase())
+      .filter(item => item && item !== 'SEM TRACKING')));
+  }
 
-    if (!tracking || tracking === 'SEM TRACKING') {
-      alert('Informe a BR do pacote.');
-      els.damageTracking.focus();
-      return;
-    }
-    if (!lookup.cep || lookup.cep.length !== 8) {
-      alert('Informe um CEP válido com 8 dígitos.');
-      els.damageCep.focus();
-      return;
-    }
+  function markDamageTracking(tracking, treatment) {
+    const lookup = damageLookupFromTracking(tracking);
+    if (!lookup) return { tracking, ok: false };
     const registryItem = registerDamage(tracking, lookup, treatment);
     const existingRows = state.rows.filter(row => trackingKey(value(row, 'tracking')) === trackingKey(tracking));
 
@@ -1643,6 +1813,28 @@
       };
       state.rows.unshift(row);
     }
+    return { tracking, ok: true };
+  }
+
+  function addDamageEntry() {
+    const trackings = parseDamageTrackings();
+    const treatment = clean(els.damageTreatment.value) || 'Avaria registrada';
+
+    if (!trackings.length) {
+      alert('Informe ao menos uma BR de avaria.');
+      els.damageTracking.focus();
+      return;
+    }
+
+    const results = trackings.map(tracking => markDamageTracking(tracking, treatment));
+    const added = results.filter(item => item.ok);
+    const missing = results.filter(item => !item.ok);
+
+    if (!added.length) {
+      alert('Nenhuma BR foi encontrada na planilha importada. Importe a planilha atualizada ou confira as BRs digitadas.');
+      els.damageTracking.focus();
+      return;
+    }
     ensureRowIds();
     if (!state.importFiles.includes('Avarias manuais')) state.importFiles.push('Avarias manuais');
     if (!state.headers.length) {
@@ -1654,6 +1846,9 @@
     updateDamagePreview();
     renderAll();
     saveCloudState();
+    if (missing.length) {
+      alert(`${number(added.length)} avaria(s) adicionada(s). ${number(missing.length)} BR(s) não encontrada(s): ${missing.map(item => item.tracking).join(', ')}`);
+    }
   }
 
   function removeDamageEntry(rowId) {
@@ -2282,7 +2477,7 @@
     });
 
     els.fileInput.addEventListener('change', event => handleFiles(event.target.files));
-    els.damageCep.addEventListener('input', updateDamagePreview);
+    els.damageTracking.addEventListener('input', updateDamagePreview);
     els.damageForm.addEventListener('submit', event => {
       event.preventDefault();
       addDamageEntry();
@@ -2296,6 +2491,40 @@
       setRouteCities(cityGroups.map(group => group.name));
     });
     els.routeClearBtn.addEventListener('click', () => setRouteCities([]));
+    els.receivedCityFilter.addEventListener('change', () => {
+      state.receivedMonitor.city = els.receivedCityFilter.value;
+      state.receivedMonitor.bairro = '';
+      renderReceivedMonitor();
+    });
+    els.receivedBairroFilter.addEventListener('change', () => {
+      state.receivedMonitor.bairro = els.receivedBairroFilter.value;
+      renderReceivedMonitor();
+    });
+    els.receivedSort.addEventListener('change', () => {
+      state.receivedMonitor.sort = els.receivedSort.value === 'asc' ? 'asc' : 'desc';
+      renderReceivedMonitor();
+    });
+    els.receivedSearch.addEventListener('input', () => {
+      state.receivedMonitor.search = els.receivedSearch.value;
+      renderReceivedMonitor();
+    });
+    els.assignedCityFilter.addEventListener('change', () => {
+      state.assignedMonitor.city = els.assignedCityFilter.value;
+      state.assignedMonitor.bairro = '';
+      renderAssignedMonitor();
+    });
+    els.assignedBairroFilter.addEventListener('change', () => {
+      state.assignedMonitor.bairro = els.assignedBairroFilter.value;
+      renderAssignedMonitor();
+    });
+    els.assignedSort.addEventListener('change', () => {
+      state.assignedMonitor.sort = els.assignedSort.value === 'asc' ? 'asc' : 'desc';
+      renderAssignedMonitor();
+    });
+    els.assignedSearch.addEventListener('input', () => {
+      state.assignedMonitor.search = els.assignedSearch.value;
+      renderAssignedMonitor();
+    });
     els.searchInput.addEventListener('input', renderSearch);
     els.modalSearch.addEventListener('input', renderModalRows);
     els.copyRowsBtn.addEventListener('click', () => copyRows(state.currentRows));

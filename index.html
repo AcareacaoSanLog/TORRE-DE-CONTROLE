@@ -329,21 +329,59 @@
       <section class="view" id="received">
         <section class="panel">
           <div class="panel-head"><h3>📥 BRs em Received por cidade/bairro</h3></div>
+          <div class="received-controls">
+            <label>
+              <span>Cidade</span>
+              <select id="receivedCityFilter"></select>
+            </label>
+            <label>
+              <span>Bairro</span>
+              <select id="receivedBairroFilter"></select>
+            </label>
+            <label>
+              <span>Quantidade</span>
+              <select id="receivedSort">
+                <option value="desc">Maior para menor</option>
+                <option value="asc">Menor para maior</option>
+              </select>
+            </label>
+            <label class="received-search-field">
+              <span>Buscar BR</span>
+              <input id="receivedSearch" type="search" placeholder="Digite a BR ou tracking">
+            </label>
+          </div>
+          <div class="result-list received-results" id="receivedSearchResults"></div>
           <div class="table-wrap tall"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="receivedTable"></tbody></table></div>
         </section>
       </section>
 
       <section class="view" id="assigned">
-        <div class="table-grid">
-          <section class="panel">
-            <div class="panel-head"><h3>🚚 Hub Assigned por driver</h3></div>
-            <div class="table-wrap tall"><table><thead><tr><th>Driver ID</th><th>Driver</th><th>Veículo</th><th>Cidade base</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedDriverTable"></tbody></table></div>
-          </section>
-          <section class="panel">
-            <div class="panel-head"><h3>🏷️ Hub Assigned por cidade/bairro</h3></div>
-            <div class="table-wrap tall"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedTable"></tbody></table></div>
-          </section>
-        </div>
+        <section class="panel">
+          <div class="panel-head"><h3>🏷️ BRs em Assigned por cidade/bairro</h3></div>
+          <div class="assigned-controls">
+            <label>
+              <span>Cidade</span>
+              <select id="assignedCityFilter"></select>
+            </label>
+            <label>
+              <span>Bairro</span>
+              <select id="assignedBairroFilter"></select>
+            </label>
+            <label>
+              <span>Quantidade</span>
+              <select id="assignedSort">
+                <option value="desc">Maior para menor</option>
+                <option value="asc">Menor para maior</option>
+              </select>
+            </label>
+            <label class="assigned-search-field">
+              <span>Buscar BR</span>
+              <input id="assignedSearch" type="search" placeholder="Digite a BR ou tracking">
+            </label>
+          </div>
+          <div class="result-list assigned-results" id="assignedSearchResults"></div>
+          <div class="table-wrap tall"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedTable"></tbody></table></div>
+        </section>
       </section>
 
       <section class="view" id="damage">
@@ -359,14 +397,16 @@
                 <input id="damageTracking" type="text" placeholder="Ex.: BR123456789" autocomplete="off">
               </label>
               <label>
-                <span>CEP</span>
-                <input id="damageCep" type="text" inputmode="numeric" placeholder="Ex.: 45985090" autocomplete="off">
+                <span>BRs em massa</span>
+                <textarea id="damageBulkTrackings" rows="5" placeholder="Cole várias BRs aqui, uma por linha"></textarea>
               </label>
               <div class="damage-preview">
+                <span>CEP da BR</span>
+                <strong id="damageCepPreview">Digite a BR</strong>
                 <span>Cidade</span>
-                <strong id="damageCityPreview">Informe o CEP</strong>
+                <strong id="damageCityPreview">Digite a BR</strong>
                 <span>Bairro</span>
-                <strong id="damageBairroPreview">Informe o CEP</strong>
+                <strong id="damageBairroPreview">Digite a BR</strong>
               </div>
               <label class="damage-wide">
                 <span>Tratativa inicial</span>
