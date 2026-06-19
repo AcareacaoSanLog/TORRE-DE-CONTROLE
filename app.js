@@ -56,6 +56,13 @@
       sort: 'desc',
       search: ''
     },
+    lhRows: [],
+    lhColumns: {},
+    lhFiles: [],
+    lhFilter: {
+      status: 'all',
+      search: ''
+    },
     issues: []
   };
 
@@ -124,6 +131,12 @@
     driverTable: document.getElementById('driverTable'),
     searchInput: document.getElementById('searchInput'),
     searchResults: document.getElementById('searchResults'),
+    lhFileInput: document.getElementById('lhFileInput'),
+    lhStats: document.getElementById('lhStats'),
+    lhStatusFilter: document.getElementById('lhStatusFilter'),
+    lhSearch: document.getElementById('lhSearch'),
+    lhExportBtn: document.getElementById('lhExportBtn'),
+    lhTable: document.getElementById('lhTable'),
     modal: document.getElementById('detailModal'),
     modalTitle: document.getElementById('modalTitle'),
     modalSubtitle: document.getElementById('modalSubtitle'),
@@ -2217,8 +2230,10 @@
     renderTables(stats);
     renderDamageView();
     renderRouteCalculator();
+    renderLhControl();
     renderSearch();
-    els.emptyState.classList.toggle('hidden', stats.total > 0);
+    const activeView = document.querySelector('.view.active')?.id;
+    els.emptyState.classList.toggle('hidden', stats.total > 0 || activeView === 'lh');
     els.lastUpdate.textContent = stats.total ? new Date().toLocaleString('pt-BR') : 'Aguardando importação';
     refreshIcons();
   }
@@ -2256,6 +2271,45 @@
     applyTreatmentRegistryToRows();
     renderAll();
     setView('columns');
+  }
+
+  async function handleLhFiles(files) {
+    if (!files || !files.length) return;
+    if (typeof XLSX === 'undefined') {
+      alert('A biblioteca XLSX não carregou. Abra com internet ativa para importar a triagem.');
+      return;
+    }
+    const allRows = [];
+    for (const file of files) {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      workbook.SheetNames.forEach(sheetName => {
+        const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        json.forEach(row => allRows.push({ ...row, __file: file.name, __sheet: sheetName }));
+      });
+    }
+    state.lhRows = allRows;
+    state.lhColumns = detectColumns(allRows);
+    state.lhFiles = Array.from(files).map(file => file.name);
+    state.lhFilter = { status: 'all', search: '' };
+    renderLhControl();
+    setView('lh');
+  }
+
+  function exportLhControl() {
+    const rows = lhVisibleRows();
+    const header = ['Status', 'BR', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver', 'Arquivo'];
+    const body = rows.map(row => [
+      lhStatusOf(row),
+      lhValue(row, 'tracking'),
+      lhCepOf(row),
+      lhValue(row, 'city'),
+      lhValue(row, 'bairro'),
+      lhValue(row, 'driverId'),
+      lhValue(row, 'driver'),
+      row.__file || ''
+    ]);
+    downloadCsv([header, ...body], 'controle-lh.csv');
   }
 
   function openDetails(filter, title) {
@@ -2362,6 +2416,93 @@
       row.__txfTratativa || '',
       row.__txfStatusAction || ''
     ].join(' ');
+  }
+
+  function lhRaw(row, type) {
+    const key = state.lhColumns[type];
+    return clean((key ? row[key] : '') || row[type] || '');
+  }
+
+  function lhCepOf(row) {
+    const digits = clean(lhRaw(row, 'cep')).replace(/\D/g, '');
+    return digits ? digits.padStart(8, '0').slice(-8) : '';
+  }
+
+  function lhValue(row, type) {
+    if (type === 'city' || type === 'bairro') {
+      const mapped = cepMap[lhCepOf(row)] || {};
+      const fallback = type === 'city' ? 'Sem cidade' : 'Sem bairro';
+      return lhRaw(row, type) || mapped[type === 'city' ? 'cidade' : 'bairro'] || fallback;
+    }
+    if (type === 'driver') return lhRaw(row, 'driver') || 'Sem driver';
+    if (type === 'driverId') return lhRaw(row, 'driverId') || 'Sem ID';
+    const fallbacks = { tracking: 'Sem tracking', status: '(vazio)', cep: 'Sem CEP' };
+    return lhRaw(row, type) || fallbacks[type] || '';
+  }
+
+  function lhStatusOf(row) {
+    return normalizeStatus(lhValue(row, 'status') || row.__sheet || row.__file);
+  }
+
+  function isLhControlStatus(status) {
+    return status === 'SOC_LHTransported' || isReceived(status);
+  }
+
+  function lhRelevantRows() {
+    return state.lhRows.filter(row => isLhControlStatus(lhStatusOf(row)));
+  }
+
+  function lhSearchText(row) {
+    return [
+      lhValue(row, 'tracking'),
+      lhStatusOf(row),
+      lhCepOf(row),
+      lhValue(row, 'city'),
+      lhValue(row, 'bairro'),
+      lhValue(row, 'driverId'),
+      lhValue(row, 'driver'),
+      row.__file,
+      row.__sheet
+    ].join(' ');
+  }
+
+  function lhVisibleRows() {
+    const query = low(state.lhFilter.search);
+    return lhRelevantRows().filter(row => {
+      const status = lhStatusOf(row);
+      if (state.lhFilter.status === 'SOC_LHTransported' && status !== 'SOC_LHTransported') return false;
+      if (state.lhFilter.status === 'Hub_Received' && !isReceived(status)) return false;
+      if (query && !low(lhSearchText(row)).includes(query)) return false;
+      return true;
+    });
+  }
+
+  function renderLhControl() {
+    if (!els.lhTable) return;
+    const relevant = lhRelevantRows();
+    const visible = lhVisibleRows();
+    const soc = relevant.filter(row => lhStatusOf(row) === 'SOC_LHTransported').length;
+    const received = relevant.filter(row => isReceived(lhStatusOf(row))).length;
+    els.lhStatusFilter.value = state.lhFilter.status || 'all';
+    els.lhSearch.value = state.lhFilter.search || '';
+    els.lhStats.innerHTML = [
+      ['Total triagem', relevant.length, `${number(state.lhRows.length)} linhas importadas`],
+      ['SOC LH', soc, 'Pacotes no line haul'],
+      ['Hub Received', received, 'Pacotes recebidos no hub'],
+      ['Visíveis', visible.length, state.lhFiles.join(', ') || 'Nenhum arquivo']
+    ].map(([label, qty, note]) => `<span><b>${number(qty)}</b><small>${html(label)}</small><em>${html(note)}</em></span>`).join('');
+
+    els.lhTable.innerHTML = visible.map(row => `
+      <tr>
+        <td>${statusPill(lhStatusOf(row))}</td>
+        <td>${html(lhValue(row, 'tracking'))}</td>
+        <td>${html(lhCepOf(row))}</td>
+        <td>${html(lhValue(row, 'city'))}</td>
+        <td>${html(lhValue(row, 'bairro'))}</td>
+        <td>${html(lhValue(row, 'driver'))}</td>
+        <td>${html(row.__file || '')}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="7">Importe a planilha da triagem ou ajuste a busca.</td></tr>';
   }
 
   function renderSearch() {
@@ -2587,6 +2728,16 @@
     });
 
     els.fileInput.addEventListener('change', event => handleFiles(event.target.files));
+    els.lhFileInput.addEventListener('change', event => handleLhFiles(event.target.files));
+    els.lhStatusFilter.addEventListener('change', event => {
+      state.lhFilter.status = event.target.value;
+      renderLhControl();
+    });
+    els.lhSearch.addEventListener('input', event => {
+      state.lhFilter.search = event.target.value;
+      renderLhControl();
+    });
+    els.lhExportBtn.addEventListener('click', exportLhControl);
     els.damageTracking.addEventListener('input', updateDamagePreview);
     els.damageForm.addEventListener('submit', event => {
       event.preventDefault();
@@ -2713,6 +2864,7 @@
     document.getElementById('viewTitle').textContent = active ? active.textContent : 'Dashboard';
     setToolsOpen(['history', 'search'].includes(id));
     setMonitoringOpen(['received', 'assigned'].includes(id));
+    if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0 || id === 'lh');
   }
 
   function toggleTools(force) {

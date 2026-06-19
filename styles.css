@@ -1593,6 +1593,95 @@ tr.clickable:hover { background: var(--surface-2); }
   display: none;
 }
 
+.lh-toolbar {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.lh-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.lh-stats span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #061524;
+}
+
+.lh-stats b,
+.lh-stats small,
+.lh-stats em {
+  display: block;
+}
+
+.lh-stats b {
+  color: var(--cyan);
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.lh-stats small {
+  color: var(--text);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.lh-stats em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.lh-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.2fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.lh-controls label {
+  display: grid;
+  gap: 6px;
+}
+
+.lh-controls span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.lh-controls select,
+.lh-controls input {
+  height: 40px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101820;
+  color: var(--text);
+  padding: 0 12px;
+  outline: 0;
+}
+
+.lh-controls select:focus,
+.lh-controls input:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
+}
+
+.lh-import-button {
+  align-items: center;
+  justify-content: center;
+}
+
+.lh-import-button input {
+  display: none;
+}
+
 .modal {
   width: min(1180px, calc(100vw - 28px));
   max-height: calc(100vh - 28px);
@@ -1634,7 +1723,7 @@ tr.clickable:hover { background: var(--surface-2); }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .goal-panel { grid-template-columns: 96px 1fr; }
   .goal-panel .plain-action { grid-column: 1 / -1; width: 100%; }
-  .work-grid, .table-grid, .target-grid, .manager-grid, .damage-grid, .route-grid, .history-insights, .filter-bar, .received-controls, .assigned-controls { grid-template-columns: 1fr; }
+  .work-grid, .table-grid, .target-grid, .manager-grid, .damage-grid, .route-grid, .history-insights, .filter-bar, .received-controls, .assigned-controls, .lh-stats, .lh-controls { grid-template-columns: 1fr; }
   .operation-map { grid-template-columns: repeat(2, 1fr); }
   .column-grid { grid-template-columns: repeat(2, 1fr); }
   .quality-grid { grid-template-columns: repeat(2, 1fr); }
@@ -2314,6 +2403,8 @@ td {
 .brand .shopee-xpress {
   width: 96px;
   height: 22px;
+  padding: 0;
+  border: 0;
   border-radius: 0;
   display: inline-flex;
   align-items: center;
@@ -2329,10 +2420,23 @@ td {
   letter-spacing: -0.02em;
 }
 
+.brand .shopee-xpress:hover,
+.brand .shopee-xpress:focus-visible {
+  color: #ff6b52;
+  outline: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .brand .shopee-xpress strong {
   color: #ff3d1f;
   font-size: 19px;
   font-style: italic;
   font-weight: 950;
   letter-spacing: -0.03em;
+}
+
+.brand .shopee-xpress:hover strong,
+.brand .shopee-xpress:focus-visible strong {
+  color: #ff6b52;
 }
