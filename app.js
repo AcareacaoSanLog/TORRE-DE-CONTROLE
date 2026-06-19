@@ -31,6 +31,7 @@
     actionPlanText: '',
     history: [],
     damageRegistry: {},
+    treatmentRegistry: {},
     routeCity: '',
     routeCities: [],
     routeViewMode: 'grid',
@@ -449,6 +450,37 @@
     }]));
   }
 
+  function buildTreatmentRegistryFromRows(rows) {
+    return rows.reduce((registry, row) => {
+      const key = trackingKey(row.tracking || row.__tracking || row.__txfTracking || row.tracking_code || value(row, 'tracking') || '');
+      if (!key) return registry;
+      const treatment = row.__txfTratativa || '';
+      const statusAction = row.__txfStatusAction || '';
+      const statusOverride = row.__txfStatusOverride || '';
+      if (treatment || statusAction || statusOverride) {
+        registry[key] = {
+          tracking: key,
+          treatment,
+          statusAction,
+          statusOverride,
+          updatedAt: row.__txfTreatmentUpdatedAt || new Date().toISOString()
+        };
+      }
+      return registry;
+    }, {});
+  }
+
+  function normalizedTreatmentRegistry() {
+    captureTreatmentRegistryFromRows();
+    return Object.fromEntries(Object.entries(state.treatmentRegistry || {}).map(([key, item]) => [key, {
+      tracking: item.tracking || key,
+      treatment: item.treatment || '',
+      statusAction: item.statusAction || '',
+      statusOverride: item.statusOverride || '',
+      updatedAt: item.updatedAt || ''
+    }]));
+  }
+
   function normalizedHistory() {
     return (state.history || []).slice(0, HISTORY_LIMIT).map(item => ({
       ...item,
@@ -479,7 +511,6 @@
   function applyCloudRows(payload) {
     const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     state.rows = rows;
-    state.damageRegistry = payload?.damageRegistry || buildDamageRegistryFromRows(rows);
     state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'driverId', 'driver'];
     state.detectedColumns = {
       tracking: 'tracking',
@@ -491,6 +522,11 @@
       driver: 'driver'
     };
     state.columns = { ...state.detectedColumns };
+    state.damageRegistry = payload?.damageRegistry || buildDamageRegistryFromRows(rows);
+    state.treatmentRegistry = {
+      ...buildTreatmentRegistryFromRows(rows),
+      ...(payload?.treatmentRegistry || {})
+    };
     state.importFiles = Array.isArray(payload?.files) ? payload.files : ['importação salva na nuvem'];
     state.importId = `cloud-${payload?.savedAt || Date.now()}`;
     state.routeCities = [];
@@ -499,6 +535,7 @@
     applyHistoryFromCloud(payload?.history);
     ensureRowIds();
     applyDamageRegistryToRows();
+    applyTreatmentRegistryToRows();
     clearFilters();
     renderAll();
   }
@@ -514,6 +551,7 @@
       files: state.importFiles.slice(),
       rows: normalizedCloudRows(),
       damageRegistry: normalizedDamageRegistry(),
+      treatmentRegistry: normalizedTreatmentRegistry(),
       history: normalizedHistory()
     };
 
@@ -632,6 +670,45 @@
       if (!raw(row, 'cep') && registryItem.cep) row.cep = registryItem.cep;
       if (!raw(row, 'city') && registryItem.city) row.city = registryItem.city;
       if (!raw(row, 'bairro') && registryItem.bairro) row.bairro = registryItem.bairro;
+    });
+  }
+
+  function rememberTreatment(row) {
+    const key = trackingKey(value(row, 'tracking'));
+    if (!key) return;
+    const treatment = row.__txfTratativa || '';
+    const statusAction = row.__txfStatusAction || '';
+    const statusOverride = row.__txfStatusOverride || '';
+    if (!treatment && !statusAction && !statusOverride) {
+      delete state.treatmentRegistry[key];
+      return;
+    }
+    state.treatmentRegistry[key] = {
+      tracking: key,
+      treatment,
+      statusAction,
+      statusOverride,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  function captureTreatmentRegistryFromRows() {
+    state.rows.forEach(row => {
+      if (row.__txfTratativa || row.__txfStatusAction || row.__txfStatusOverride) rememberTreatment(row);
+    });
+  }
+
+  function applyTreatmentRegistryToRows() {
+    state.rows.forEach(row => {
+      const registryItem = state.treatmentRegistry[trackingKey(value(row, 'tracking'))];
+      if (!registryItem) return;
+      const realStatus = normalizeStatus(raw(row, 'status') || row.status || row.__sheet || row.__file);
+      if (registryItem.treatment) row.__txfTratativa = registryItem.treatment;
+      if (registryItem.statusAction) row.__txfStatusAction = registryItem.statusAction;
+      if (registryItem.statusOverride && isReceived(realStatus)) {
+        row.__txfStatusOverride = registryItem.statusOverride;
+      }
+      row.__txfTreatmentUpdatedAt = registryItem.updatedAt || row.__txfTreatmentUpdatedAt || '';
     });
   }
 
@@ -2136,6 +2213,7 @@
       alert('A biblioteca XLSX não carregou. Abra com internet ativa para importar planilhas.');
       return;
     }
+    captureTreatmentRegistryFromRows();
 
     const allRows = [];
     for (const file of files) {
@@ -2159,6 +2237,7 @@
     state.detectedColumns = detectColumns(allRows);
     state.columns = { ...state.detectedColumns };
     applyDamageRegistryToRows();
+    applyTreatmentRegistryToRows();
     renderAll();
     setView('columns');
   }
@@ -2235,6 +2314,7 @@
       row.__txfStatusAction = '';
       row.__txfStatusOverride = '';
     }
+    rememberTreatment(row);
     renderAll();
     state.currentRows = filteredRows(state.currentFilter || { kind: 'Hub_Received' });
     renderModalRows();
@@ -2249,6 +2329,7 @@
     if (row.__txfDamage && state.damageRegistry[key]) {
       state.damageRegistry[key].treatment = row.__txfTratativa;
     }
+    rememberTreatment(row);
   }
 
   function rowSearchText(row) {
