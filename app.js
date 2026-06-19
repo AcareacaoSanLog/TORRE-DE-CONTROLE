@@ -636,7 +636,7 @@
   }
 
   function isDamageRow(row) {
-    return Boolean(row.__txfDamage) && isReceived(statusOf(row));
+    return Boolean(row.__txfDamage);
   }
 
   function detectColumns(rows) {
@@ -948,22 +948,35 @@
   }
 
   function filteredRows(filter) {
-    return state.rows.filter(row => rowMatches(row, filter));
+    return state.rows.filter(row => globalFilterMatches(row) && rowMatches(row, filter));
+  }
+
+  function isTeixeiraCity(city) {
+    return removeAccents(city) === 'teixeira de freitas';
+  }
+
+  function isInteriorScopeCity(city) {
+    const normalizedCity = removeAccents(city);
+    return regionRules
+      .filter(rule => rule.name !== 'Teixeira urbano')
+      .some(rule => rule.cities.some(item => removeAccents(item) === normalizedCity));
+  }
+
+  function globalFilterMatches(row) {
+    const status = statusOf(row);
+    const city = value(row, 'city');
+    const driver = value(row, 'driver');
+    if (state.filters.status === 'notDelivered' && status === 'Delivered') return false;
+    if (state.filters.status && state.filters.status !== 'notDelivered' && status !== state.filters.status) return false;
+    if (state.filters.city && city !== state.filters.city) return false;
+    if (state.filters.driver && driver !== state.filters.driver) return false;
+    if (state.filters.scope === 'teixeira' && !isTeixeiraCity(city)) return false;
+    if (state.filters.scope === 'interior' && !isInteriorScopeCity(city)) return false;
+    return true;
   }
 
   function visibleRows() {
-    return state.rows.filter(row => {
-      const status = statusOf(row);
-      const city = value(row, 'city');
-      const driver = value(row, 'driver');
-      if (state.filters.status === 'notDelivered' && status === 'Delivered') return false;
-      if (state.filters.status && state.filters.status !== 'notDelivered' && status !== state.filters.status) return false;
-      if (state.filters.city && city !== state.filters.city) return false;
-      if (state.filters.driver && driver !== state.filters.driver) return false;
-      if (state.filters.scope === 'teixeira' && removeAccents(city) !== 'teixeira de freitas') return false;
-      if (state.filters.scope === 'interior' && removeAccents(city) === 'teixeira de freitas') return false;
-      return true;
-    });
+    return state.rows.filter(globalFilterMatches);
   }
 
   function rowsByRegion(region) {
