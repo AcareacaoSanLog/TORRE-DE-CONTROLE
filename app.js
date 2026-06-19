@@ -2400,6 +2400,8 @@
       state.damageRegistry[key].treatment = row.__txfTratativa;
     }
     rememberTreatment(row);
+    renderReceivedMonitor();
+    if (row.__txfDamage) renderDamageView();
   }
 
   function rowSearchText(row) {
