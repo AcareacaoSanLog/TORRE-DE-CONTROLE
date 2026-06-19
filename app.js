@@ -21,6 +21,7 @@
     damageRegistry: {},
     routeCity: '',
     routeCities: [],
+    routeViewMode: 'grid',
     routeSelectionTouched: false,
     importId: '',
     importFiles: [],
@@ -1542,10 +1543,16 @@
     const selectedCityGroups = cityGroups.filter(group => selectedSet.has(group.name));
     els.routeSelectedCities.innerHTML = selectedCityGroups.length ? `
       <div class="route-selected-head">
-        <strong>Cidades selecionadas</strong>
-        <span>${number(selectedStats.total)} ${plural(selectedStats.total, 'pacote', 'pacotes')} no total</span>
+        <div>
+          <strong>Cidades selecionadas</strong>
+          <span>${number(selectedStats.total)} ${plural(selectedStats.total, 'pacote', 'pacotes')} no total</span>
+        </div>
+        <div class="route-view-toggle" aria-label="Modo de visualização">
+          <button class="mini-button ${state.routeViewMode === 'grid' ? 'active' : ''}" type="button" data-route-view="grid">Lado a lado</button>
+          <button class="mini-button ${state.routeViewMode === 'list' ? 'active' : ''}" type="button" data-route-view="list">Um abaixo do outro</button>
+        </div>
       </div>
-      <div class="route-selected-list">
+      <div class="route-selected-list ${state.routeViewMode === 'list' ? 'stacked' : ''}">
         ${selectedCityGroups.map(group => `
           <button class="route-selected-city" type="button" data-route-city="${html(group.name)}" title="Remover ${html(group.name)} da rota">
             <span>${html(group.name)}</span>
@@ -1941,6 +1948,12 @@
         else selected.add(city);
         setRouteCities(Array.from(selected));
         setView('route');
+      }
+
+      const routeViewButton = event.target.closest('[data-route-view]');
+      if (routeViewButton) {
+        state.routeViewMode = routeViewButton.dataset.routeView === 'list' ? 'list' : 'grid';
+        renderRouteCalculator();
       }
 
       const viewJump = event.target.closest('[data-view-jump]');

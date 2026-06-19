@@ -982,6 +982,11 @@ button { cursor: pointer; }
   margin-bottom: 10px;
 }
 
+.route-selected-head > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
 .route-selected-head strong {
   color: var(--text);
   font-size: 15px;
@@ -995,10 +1000,43 @@ button { cursor: pointer; }
   font-weight: 850;
 }
 
+.route-view-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.route-view-toggle .mini-button.active {
+  background: linear-gradient(135deg, #1683ff 0%, #0b6fe8 100%);
+  border-color: #2492ff;
+  color: #fff;
+}
+
 .route-selected-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 8px;
+}
+
+.route-selected-list.stacked {
+  grid-template-columns: 1fr;
+}
+
+.route-selected-list.stacked .route-selected-city {
+  grid-template-columns: 1fr;
+  gap: 3px;
+  min-height: auto;
+  padding: 9px 12px;
+}
+
+.route-selected-list.stacked .route-selected-city strong {
+  font-size: 24px;
+  line-height: 1.05;
+}
+
+.route-selected-list.stacked .route-selected-city small {
+  margin-top: 1px;
 }
 
 .route-selected-city {
@@ -1778,6 +1816,8 @@ th {
   .route-summary { grid-template-columns: 1fr; }
   .route-city-checklist { grid-template-columns: 1fr; }
   .route-picker-head { align-items: flex-start; flex-direction: column; }
+  .route-selected-head { align-items: flex-start; flex-direction: column; }
+  .route-view-toggle { justify-content: flex-start; }
 }
 
 /* Paleta espelhada do layout PRO de referência */
