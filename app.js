@@ -11,12 +11,14 @@
     detectedColumns: {},
     headers: [],
     currentRows: [],
+    currentFilter: null,
     stats: null,
     summary: '',
     mapSummary: '',
     managerText: '',
     actionPlanText: '',
     history: [],
+    damageRegistry: {},
     importId: '',
     importFiles: [],
     filters: {
@@ -34,8 +36,6 @@
     emptyState: document.getElementById('emptyState'),
     fileInput: document.getElementById('fileInput'),
     dropZone: document.getElementById('dropZone'),
-    columnNotice: document.getElementById('columnNotice'),
-    columnNoticeText: document.getElementById('columnNoticeText'),
     columnBadge: document.getElementById('columnBadge'),
     columnMapper: document.getElementById('columnMapper'),
     columnQuality: document.getElementById('columnQuality'),
@@ -62,6 +62,14 @@
     missionList: document.getElementById('missionList'),
     receivedTable: document.getElementById('receivedTable'),
     assignedTable: document.getElementById('assignedTable'),
+    damageForm: document.getElementById('damageForm'),
+    damageTracking: document.getElementById('damageTracking'),
+    damageCep: document.getElementById('damageCep'),
+    damageTreatment: document.getElementById('damageTreatment'),
+    damageCityPreview: document.getElementById('damageCityPreview'),
+    damageBairroPreview: document.getElementById('damageBairroPreview'),
+    damageStats: document.getElementById('damageStats'),
+    damageTable: document.getElementById('damageTable'),
     cityTable: document.getElementById('cityTable'),
     driverTable: document.getElementById('driverTable'),
     searchInput: document.getElementById('searchInput'),
@@ -70,6 +78,7 @@
     modalTitle: document.getElementById('modalTitle'),
     modalSubtitle: document.getElementById('modalSubtitle'),
     modalSearch: document.getElementById('modalSearch'),
+    modalHeader: document.getElementById('modalHeader'),
     modalRows: document.getElementById('modalRows'),
     copyRowsBtn: document.getElementById('copyRowsBtn'),
     copySummaryBtn: document.getElementById('copySummaryBtn'),
@@ -135,6 +144,7 @@
     Return_Hub_Received: { label: 'Received retorno', className: 'st-received', tone: 'high' },
     Hub_Assigned: { label: 'Assigned', className: 'st-assigned', tone: 'normal' },
     Hub_Assigning: { label: 'Assigning', className: 'st-assigned', tone: 'normal' },
+    Avaria: { label: 'Avaria', className: 'st-damage', tone: 'high' },
     OnHold: { label: 'OnHold', className: 'st-hold', tone: 'critical' },
     Other: { label: 'Outros', className: 'st-other', tone: 'normal' }
   };
@@ -187,6 +197,10 @@
 
   function number(value) {
     return Number(value || 0).toLocaleString('pt-BR');
+  }
+
+  function plural(value, singular, pluralText) {
+    return Number(value) === 1 ? singular : pluralText;
   }
 
   function percent(part, total) {
@@ -291,13 +305,31 @@
       bairro: value(row, 'bairro'),
       driver: value(row, 'driver'),
       __file: row.__file || '',
-      __sheet: row.__sheet || ''
+      __sheet: row.__sheet || '',
+      __txfRowId: row.__txfRowId || '',
+      __txfTratativa: row.__txfTratativa || '',
+      __txfStatusOverride: row.__txfStatusOverride || '',
+      __txfStatusAction: row.__txfStatusAction || '',
+      __txfDamage: row.__txfDamage || '',
+      __txfDamageCreatedAt: row.__txfDamageCreatedAt || ''
     }));
+  }
+
+  function normalizedDamageRegistry() {
+    return Object.fromEntries(Object.entries(state.damageRegistry || {}).map(([key, item]) => [key, {
+      tracking: item.tracking || key,
+      cep: item.cep || '',
+      city: item.city || '',
+      bairro: item.bairro || '',
+      treatment: item.treatment || '',
+      createdAt: item.createdAt || ''
+    }]));
   }
 
   function applyCloudRows(payload) {
     const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     state.rows = rows;
+    state.damageRegistry = payload?.damageRegistry || buildDamageRegistryFromRows(rows);
     state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'driver'];
     state.detectedColumns = {
       tracking: 'tracking',
@@ -310,6 +342,8 @@
     state.columns = { ...state.detectedColumns };
     state.importFiles = Array.isArray(payload?.files) ? payload.files : ['importação salva na nuvem'];
     state.importId = `cloud-${payload?.savedAt || Date.now()}`;
+    ensureRowIds();
+    applyDamageRegistryToRows();
     clearFilters();
     renderAll();
   }
@@ -323,7 +357,8 @@
       version: 1,
       savedAt: new Date().toISOString(),
       files: state.importFiles.slice(),
-      rows: normalizedCloudRows()
+      rows: normalizedCloudRows(),
+      damageRegistry: normalizedDamageRegistry()
     };
 
     setCloudStatus('Nuvem: salvando última importação...', 'warn');
@@ -388,6 +423,64 @@
 
   function isAssigned(status) {
     return ['Hub_Assigned', 'Hub_Assigning'].includes(normalizeStatus(status));
+  }
+
+  function trackingKey(value) {
+    return clean(value).toUpperCase();
+  }
+
+  function ensureRowIds() {
+    state.rows.forEach((row, index) => {
+      if (!row.__txfRowId) row.__txfRowId = `txf-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+    });
+  }
+
+  function buildDamageRegistryFromRows(rows) {
+    return rows.filter(row => row.__txfDamage).reduce((registry, row) => {
+      const key = trackingKey(row.tracking || row.__tracking || row.__txfTracking || row.tracking_code || '');
+      if (key) {
+        registry[key] = {
+          tracking: key,
+          cep: row.cep || '',
+          city: row.city || '',
+          bairro: row.bairro || '',
+          treatment: row.__txfTratativa || 'Avaria registrada',
+          createdAt: row.__txfDamageCreatedAt || ''
+        };
+      }
+      return registry;
+    }, {});
+  }
+
+  function registerDamage(tracking, lookup, treatment) {
+    const key = trackingKey(tracking);
+    if (!key) return null;
+    state.damageRegistry[key] = {
+      tracking: key,
+      cep: lookup.cep || '',
+      city: lookup.city || '',
+      bairro: lookup.bairro || '',
+      treatment: treatment || 'Avaria registrada',
+      createdAt: state.damageRegistry[key]?.createdAt || new Date().toISOString()
+    };
+    return state.damageRegistry[key];
+  }
+
+  function applyDamageRegistryToRows() {
+    state.rows.forEach(row => {
+      const registryItem = state.damageRegistry[trackingKey(value(row, 'tracking'))];
+      if (!registryItem) return;
+      row.__txfDamage = '1';
+      row.__txfDamageCreatedAt = registryItem.createdAt || row.__txfDamageCreatedAt || '';
+      if (!row.__txfTratativa) row.__txfTratativa = registryItem.treatment || 'Avaria registrada';
+      if (!raw(row, 'cep') && registryItem.cep) row.cep = registryItem.cep;
+      if (!raw(row, 'city') && registryItem.city) row.city = registryItem.city;
+      if (!raw(row, 'bairro') && registryItem.bairro) row.bairro = registryItem.bairro;
+    });
+  }
+
+  function isDamageRow(row) {
+    return Boolean(row.__txfDamage) && isReceived(statusOf(row));
   }
 
   function detectColumns(rows) {
@@ -518,8 +611,7 @@
     const issues = columnIssues();
     const issueCount = issues.missing.length + issues.lowCoverage.length;
     els.columnBadge.textContent = issueCount;
-    els.columnBadge.classList.toggle('hidden', !state.rows.length);
-    els.columnNotice.classList.toggle('hidden', !state.rows.length);
+    els.columnBadge.classList.toggle('hidden', !state.rows.length || issueCount === 0);
 
     if (!state.rows.length) {
       els.columnMapper.innerHTML = '<p class="muted">Importe uma planilha para revisar as colunas.</p>';
@@ -527,10 +619,6 @@
       els.previewRows.innerHTML = '<tr><td colspan="7">Aguardando importação.</td></tr>';
       return;
     }
-
-    els.columnNoticeText.textContent = issueCount
-      ? `${issueCount} ponto(s) de atenção no mapeamento. Confira antes de tomar decisão operacional.`
-      : 'Colunas principais detectadas. Você ainda pode ajustar manualmente se algo estiver fora.';
 
     const options = ['<option value="">Não usar</option>'].concat(
       state.headers.map(header => `<option value="${html(header)}">${html(header)}</option>`)
@@ -570,7 +658,7 @@
     els.previewRows.innerHTML = state.rows.slice(0, 12).map(row => `
       <tr>
         <td>${html(value(row, 'tracking'))}</td>
-        <td>${statusPill(statusOf(row))}</td>
+        <td>${statusPill(displayStatusOf(row))}</td>
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
@@ -602,7 +690,7 @@
 
   function raw(row, type) {
     const key = state.columns[type];
-    return key ? clean(row[key]) : '';
+    return clean((key ? row[key] : '') || row[type] || '');
   }
 
   function cepOf(row) {
@@ -626,6 +714,7 @@
   }
 
   function statusOf(row) {
+    if (row.__txfStatusOverride) return normalizeStatus(row.__txfStatusOverride);
     return normalizeStatus(value(row, 'status') || row.__sheet || row.__file);
   }
 
@@ -675,6 +764,10 @@
   function statusPill(status) {
     const key = statusConfig[status] ? status : 'Other';
     return `<span class="status-pill ${statusConfig[key].className}">${html(statusConfig[key].label || status)}</span>`;
+  }
+
+  function displayStatusOf(row) {
+    return isDamageRow(row) ? 'Avaria' : statusOf(row);
   }
 
   function summarize() {
@@ -772,7 +865,7 @@
       ['Total', stats.total, 'Todos os pacotes', 'all'],
       ['Delivered', stats.delivered, percent(stats.delivered, stats.total), 'Delivered'],
       ['Received', stats.received, 'Aguardando avanço', 'Hub_Received'],
-      ['Assigned', stats.assigned, 'Atribuidos no hub', 'Hub_Assigned'],
+      ['Assigned', stats.assigned, 'Atribuídos no hub', 'Hub_Assigned'],
       ['Delivering', stats.delivering, 'Em rota', 'Delivering'],
       ['OnHold', stats.hold, percent(stats.hold, stats.total), 'OnHold']
     ];
@@ -809,7 +902,7 @@
       ['Pendentes totais', pending, 'Pacotes ainda não finalizados'],
       ['Faltam para SLA', needSla, 'Meta oficial de 99,5%'],
       ['Faltam para DS', needDs, 'Meta oficial de 98%'],
-      ['Ritmo sugerido', perHour, `${hoursLeft} hora(s) operacionais restantes hoje`]
+      ['Ritmo sugerido', perHour, `${number(hoursLeft)} ${plural(hoursLeft, 'hora operacional restante', 'horas operacionais restantes')} hoje`]
     ].map(([label, qty, note]) => `
       <div class="metric-row">
         <span><strong>${html(label)}</strong><span>${html(note)}</span></span>
@@ -821,7 +914,7 @@
     const levers = [
       ['Atacar OnHold', stats.hold, 'Maior risco de travar SLA e DS', 'OnHold'],
       ['Avançar Received', stats.received, 'Transforma fila parada em ação de hub', 'Hub_Received'],
-      ['Acompanhar Delivering', stats.delivering, 'Confirma o que ja esta em rota', 'Delivering']
+      ['Acompanhar Delivering', stats.delivering, 'Confirma o que já está em rota', 'Delivering']
     ].filter(item => item[1] > 0);
     if (topPending.length) {
       levers.push([`Top cidade: ${topPending[0][0]}`, topPending[0][1], 'Maior concentração de pendentes', 'notDelivered']);
@@ -834,7 +927,7 @@
     `).join('') : '<div class="metric-row"><span><strong>Sem alavancas pendentes</strong><span>Importe dados ou confira colunas para validar.</span></span><b class="metric-value">0</b></div>';
 
     state.summary = [
-      'RESUMO EXECUTIVO - TORRE TXF PLUS',
+      'RESUMO EXECUTIVO - TORRE DE CONTROLE TXF',
       '',
       `Total importado: ${number(stats.total)}`,
       `Delivered: ${number(stats.delivered)}`,
@@ -846,7 +939,7 @@
       `Hub Assigned: ${number(stats.assigned)}`,
       `Delivering: ${number(stats.delivering)}`,
       `OnHold: ${number(stats.hold)}`,
-      `Ritmo sugerido: ${number(perHour)} pacote(s)/hora por ${hoursLeft} hora(s)`,
+      `Ritmo sugerido: ${number(perHour)} ${plural(perHour, 'pacote/hora', 'pacotes/hora')} por ${number(hoursLeft)} ${plural(hoursLeft, 'hora operacional restante', 'horas operacionais restantes')}`,
       '',
       'Prioridade: tratar OnHold, Received e Assigned nas cidades com maior volume.',
       ...topPending.map(([city, qty], index) => `${index + 1}. ${city}: ${number(qty)} pendentes`)
@@ -863,7 +956,7 @@
 
   function updateRing(ring, label, value, done) {
     const capped = Math.min(value, 100);
-    const color = done ? 'var(--green)' : value >= 90 ? 'var(--amber)' : 'var(--red)';
+    const color = done ? 'var(--green)' : 'var(--orange)';
     ring.style.background = `conic-gradient(${color} 0 ${capped}%, var(--surface-3) ${capped}% 100%)`;
     label.textContent = `${value.toFixed(2).replace('.', ',')}%`;
   }
@@ -896,8 +989,20 @@
     return { critical: 'Crítico', high: 'Alto', normal: 'Monitorar', good: 'OK' }[severity] || 'Info';
   }
 
+  function detailTitle(kind) {
+    return {
+      all: 'Todos os pacotes',
+      notDelivered: 'Pendentes',
+      Delivered: 'Delivered',
+      Delivering: 'Delivering',
+      Hub_Received: 'Received - tratativa',
+      Hub_Assigned: 'Hub Assigned',
+      OnHold: 'OnHold'
+    }[kind] || `Detalhes: ${kind}`;
+  }
+
   function renderCityRadar(stats) {
-    renderCityBars(els.cityRadar, stats.byDeliveredCity, 'Delivered', 'Nenhuma BR entregue por cidade.');
+    renderCityBars(els.cityRadar, stats.byDeliveredCity, 'Delivered', 'Nenhuma BR entregue identificada por cidade.');
     renderCityBars(els.assignedRadar, stats.byAssignedCity, 'Hub_Assigned', 'Nenhuma BR em Hub Assigned.');
   }
 
@@ -1015,7 +1120,7 @@
     snapshot.topCities.slice(0, 2).forEach(([city, qty]) => {
       items.push({
         title: `Focar ${city}`,
-        detail: `${number(qty)} pendente(s) concentrados na cidade.`,
+        detail: `${number(qty)} ${plural(qty, 'pendente concentrado', 'pendentes concentrados')} na cidade.`,
         filter: 'notDelivered',
         city,
         severity: qty >= 10 ? 'high' : 'normal'
@@ -1033,14 +1138,14 @@
       `SLA: ${signed(snapshot.sla - previous.sla, ' p.p.')}`
     ] : ['Primeira importação salva no histórico desta sessão.'];
     const topCityText = snapshot.topCities.length
-      ? snapshot.topCities.slice(0, 5).map(([city, qty], index) => `${index + 1}. ${city}: ${number(qty)} pendente(s)`).join('\n')
+      ? snapshot.topCities.slice(0, 5).map(([city, qty], index) => `${index + 1}. ${city}: ${number(qty)} ${plural(qty, 'pendente', 'pendentes')}`).join('\n')
       : 'Sem cidades pendentes.';
     const actions = actionItems.length
       ? actionItems.map((item, index) => `${index + 1}. ${item.title}: ${item.detail}`).join('\n')
       : 'Sem ação crítica identificada.';
 
     return [
-      'RESUMO GERENCIAL - TORRE TXF PLUS',
+      'RESUMO GERENCIAL - TORRE DE CONTROLE TXF',
       `Atualização: ${new Date(snapshot.date).toLocaleString('pt-BR')}`,
       `Arquivos: ${snapshot.files.join(', ') || 'sem nome'}`,
       '',
@@ -1146,6 +1251,124 @@
     `).join('') || '<tr><td colspan="8">Nenhum driver.</td></tr>';
   }
 
+  function cepLookup(cep) {
+    const digits = clean(cep).replace(/\D/g, '').padStart(8, '0').slice(-8);
+    const mapped = cepMap[digits] || {};
+    return {
+      cep: digits,
+      city: mapped.cidade || 'Sem cidade',
+      bairro: mapped.bairro || 'Sem bairro'
+    };
+  }
+
+  function updateDamagePreview() {
+    const lookup = cepLookup(els.damageCep.value);
+    const hasCep = clean(els.damageCep.value).replace(/\D/g, '').length >= 8;
+    els.damageCityPreview.textContent = hasCep ? lookup.city : 'Informe o CEP';
+    els.damageBairroPreview.textContent = hasCep ? lookup.bairro : 'Informe o CEP';
+  }
+
+  function damageRows() {
+    return state.rows.filter(row => row.__txfDamage);
+  }
+
+  function addDamageEntry() {
+    const tracking = clean(els.damageTracking.value).toUpperCase();
+    const lookup = cepLookup(els.damageCep.value);
+    const treatment = clean(els.damageTreatment.value) || 'Avaria registrada';
+
+    if (!tracking || tracking === 'SEM TRACKING') {
+      alert('Informe a BR do pacote.');
+      els.damageTracking.focus();
+      return;
+    }
+    if (!lookup.cep || lookup.cep.length !== 8) {
+      alert('Informe um CEP válido com 8 dígitos.');
+      els.damageCep.focus();
+      return;
+    }
+    const registryItem = registerDamage(tracking, lookup, treatment);
+    const existingRows = state.rows.filter(row => trackingKey(value(row, 'tracking')) === trackingKey(tracking));
+
+    if (existingRows.length) {
+      existingRows.forEach(row => {
+        row.__txfDamage = '1';
+        row.__txfDamageCreatedAt = registryItem.createdAt;
+        row.__txfTratativa = treatment;
+        if (!raw(row, 'cep')) row.cep = lookup.cep;
+        if (!raw(row, 'city')) row.city = lookup.city;
+        if (!raw(row, 'bairro')) row.bairro = lookup.bairro;
+      });
+    } else {
+      const row = {
+        tracking,
+        status: 'Hub_Received',
+        cep: lookup.cep,
+        city: lookup.city,
+        bairro: lookup.bairro,
+        driver: 'Avaria',
+        __file: 'Avaria manual',
+        __sheet: 'Avarias',
+        __txfDamage: '1',
+        __txfDamageCreatedAt: registryItem.createdAt,
+        __txfTratativa: treatment
+      };
+      state.rows.unshift(row);
+    }
+    ensureRowIds();
+    if (!state.importFiles.includes('Avarias manuais')) state.importFiles.push('Avarias manuais');
+    if (!state.headers.length) {
+      state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'driver'];
+      state.detectedColumns = { tracking: 'tracking', status: 'status', cep: 'cep', city: 'city', bairro: 'bairro', driver: 'driver' };
+      state.columns = { ...state.detectedColumns };
+    }
+    els.damageForm.reset();
+    updateDamagePreview();
+    renderAll();
+    saveCloudState();
+  }
+
+  function removeDamageEntry(rowId) {
+    const row = state.rows.find(item => item.__txfRowId === rowId);
+    if (!row || !confirm(`Remover a avaria ${value(row, 'tracking')}?`)) return;
+    const key = trackingKey(value(row, 'tracking'));
+    delete state.damageRegistry[key];
+    state.rows.forEach(item => {
+      if (trackingKey(value(item, 'tracking')) !== key) return;
+      delete item.__txfDamage;
+      delete item.__txfDamageCreatedAt;
+      if (item.__file === 'Avaria manual') return;
+      delete item.__txfTratativa;
+    });
+    state.rows = state.rows.filter(item => !(trackingKey(value(item, 'tracking')) === key && item.__file === 'Avaria manual'));
+    renderAll();
+    saveCloudState();
+  }
+
+  function renderDamageView() {
+    const rows = damageRows();
+    const receivedDamage = rows.filter(row => isReceived(statusOf(row))).length;
+    const byCity = new Map();
+    rows.forEach(row => bump(byCity, value(row, 'city')));
+    const topCity = Array.from(byCity.entries()).sort((a, b) => b[1] - a[1])[0];
+    els.damageStats.innerHTML = `
+      <span><b>${number(receivedDamage)}</b><small>Avarias em Received</small></span>
+      <span><b>${topCity ? html(topCity[0]) : '-'}</b><small>Top cidade</small></span>
+      <span><b>${number(rows.filter(row => !cepMap[cepOf(row)]).length)}</b><small>CEPs sem mapa</small></span>
+    `;
+    els.damageTable.innerHTML = rows.map(row => `
+      <tr>
+        <td>${html(value(row, 'tracking'))}</td>
+        <td>${html(cepOf(row))}</td>
+        <td>${html(value(row, 'city'))}</td>
+        <td>${html(value(row, 'bairro'))}</td>
+        <td>${statusPill(displayStatusOf(row))}</td>
+        <td>${html(row.__txfTratativa || '')}</td>
+        <td><button class="mini-button danger" data-remove-damage="${html(row.__txfRowId)}">Remover</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="7">Nenhuma avaria cadastrada.</td></tr>';
+  }
+
   function renderAll() {
     const stats = summarize();
     renderColumnReview();
@@ -1159,6 +1382,7 @@
     renderHistory();
     renderQuality();
     renderTables(stats);
+    renderDamageView();
     renderSearch();
     els.emptyState.classList.toggle('hidden', stats.total > 0);
     els.lastUpdate.textContent = stats.total ? new Date().toLocaleString('pt-BR') : 'Aguardando importação';
@@ -1185,15 +1409,18 @@
     state.rows = allRows;
     state.importId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     state.importFiles = Array.from(files).map(file => file.name);
+    ensureRowIds();
     clearFilters();
     state.headers = detectHeaders(allRows);
     state.detectedColumns = detectColumns(allRows);
     state.columns = { ...state.detectedColumns };
+    applyDamageRegistryToRows();
     renderAll();
     setView('columns');
   }
 
   function openDetails(filter, title) {
+    state.currentFilter = filter;
     state.currentRows = filteredRows(filter);
     els.modalTitle.textContent = title || 'Detalhes';
     els.modalSubtitle.textContent = `${number(state.currentRows.length)} pacotes encontrados`;
@@ -1204,12 +1431,14 @@
   }
 
   function renderModalRows() {
+    renderModalHeader();
     const query = low(els.modalSearch.value);
     const rows = state.currentRows.filter(row => !query || low(rowSearchText(row)).includes(query)).slice(0, 1500);
-    els.modalRows.innerHTML = rows.map(row => `
+    const actionable = isReceivedActionModal();
+    els.modalRows.innerHTML = rows.map(row => actionable ? renderReceivedActionRow(row) : `
       <tr>
         <td>${html(value(row, 'tracking'))}</td>
-        <td>${statusPill(statusOf(row))}</td>
+        <td>${statusPill(displayStatusOf(row))}</td>
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
@@ -1217,6 +1446,64 @@
         <td>${html(row.__file || '')}</td>
       </tr>
     `).join('') || '<tr><td colspan="7">Nada encontrado.</td></tr>';
+  }
+
+  function renderModalHeader() {
+    const lastColumn = isReceivedActionModal() ? 'Tratativa' : 'Arquivo';
+    els.modalHeader.innerHTML = `<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver</th><th>${lastColumn}</th>`;
+  }
+
+  function isReceivedActionModal() {
+    return state.currentFilter?.kind === 'Hub_Received';
+  }
+
+  function renderReceivedActionRow(row) {
+    const receivedLabel = isDamageRow(row) ? 'Avaria' : 'Received';
+    return `
+      <tr>
+        <td>${html(value(row, 'tracking'))}</td>
+        <td>
+          <select class="status-action-select" data-status-row="${html(row.__txfRowId || '')}">
+            <option value="Hub_Received" ${row.__txfStatusAction ? '' : 'selected'}>${html(receivedLabel)}</option>
+            <option value="Criado AT" ${row.__txfStatusAction === 'Criado AT' ? 'selected' : ''}>Criado AT</option>
+          </select>
+        </td>
+        <td>${html(cepOf(row))}</td>
+        <td>${html(value(row, 'city'))}</td>
+        <td>${html(value(row, 'bairro'))}</td>
+        <td>${html(value(row, 'driver'))}</td>
+        <td>
+          <textarea class="treatment-input" data-treatment-row="${html(row.__txfRowId || '')}" rows="2" placeholder="Descreva a tratativa realizada">${html(row.__txfTratativa || '')}</textarea>
+        </td>
+      </tr>
+    `;
+  }
+
+  function updateReceivedAction(rowId, action) {
+    const row = state.rows.find(item => item.__txfRowId === rowId);
+    if (!row) return;
+    if (action === 'Criado AT') {
+      row.__txfStatusAction = 'Criado AT';
+      row.__txfStatusOverride = 'Delivering';
+      if (!row.__txfTratativa) row.__txfTratativa = 'Criado AT';
+    } else {
+      row.__txfStatusAction = '';
+      row.__txfStatusOverride = '';
+    }
+    renderAll();
+    state.currentRows = filteredRows(state.currentFilter || { kind: 'Hub_Received' });
+    renderModalRows();
+    if (state.rows.length) saveCloudState();
+  }
+
+  function updateTreatment(rowId, text) {
+    const row = state.rows.find(item => item.__txfRowId === rowId);
+    if (!row) return;
+    row.__txfTratativa = clean(text);
+    const key = trackingKey(value(row, 'tracking'));
+    if (row.__txfDamage && state.damageRegistry[key]) {
+      state.damageRegistry[key].treatment = row.__txfTratativa;
+    }
   }
 
   function rowSearchText(row) {
@@ -1228,7 +1515,9 @@
       value(row, 'bairro'),
       value(row, 'driver'),
       row.__file,
-      row.__sheet
+      row.__sheet,
+      row.__txfTratativa || '',
+      row.__txfStatusAction || ''
     ].join(' ');
   }
 
@@ -1248,6 +1537,7 @@
   }
 
   function copyRows(rows) {
+    const includeTreatment = rows.some(row => row.__txfTratativa || row.__txfStatusAction);
     const text = rows.map(row => [
       value(row, 'tracking'),
       statusOf(row),
@@ -1255,7 +1545,8 @@
       value(row, 'city'),
       value(row, 'bairro'),
       value(row, 'driver'),
-      row.__file || ''
+      row.__file || '',
+      ...(includeTreatment ? [row.__txfStatusAction || '', row.__txfTratativa || ''] : [])
     ].join('\t')).join('\n');
     navigator.clipboard?.writeText(text);
   }
@@ -1323,7 +1614,8 @@
   }
 
   function downloadRowsCsv(rows, filename) {
-    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver', 'Arquivo'];
+    const includeTreatment = rows.some(row => row.__txfTratativa || row.__txfStatusAction);
+    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver', 'Arquivo'].concat(includeTreatment ? ['Ação', 'Tratativa'] : []);
     const body = rows.map(row => [
       value(row, 'tracking'),
       statusOf(row),
@@ -1331,7 +1623,8 @@
       value(row, 'city'),
       value(row, 'bairro'),
       value(row, 'driver'),
-      row.__file || ''
+      row.__file || '',
+      ...(includeTreatment ? [row.__txfStatusAction || '', row.__txfTratativa || ''] : [])
     ]);
     downloadCsv([header, ...body], filename);
   }
@@ -1355,7 +1648,7 @@
     document.body.addEventListener('click', event => {
       const filterButton = event.target.closest('[data-filter]');
       if (filterButton) {
-        openDetails({ kind: filterButton.dataset.filter }, `Detalhes: ${filterButton.dataset.filter}`);
+        openDetails({ kind: filterButton.dataset.filter }, detailTitle(filterButton.dataset.filter));
       }
 
       const openButton = event.target.closest('[data-open]');
@@ -1364,6 +1657,7 @@
         if (filter.tracking) {
           filter.kind = 'all';
           const tracking = filter.tracking;
+          state.currentFilter = filter;
           state.currentRows = state.rows.filter(row => value(row, 'tracking') === tracking);
           els.modalTitle.textContent = `Tracking: ${tracking}`;
           els.modalSubtitle.textContent = `${number(state.currentRows.length)} registros encontrados`;
@@ -1386,6 +1680,7 @@
       const regionButton = event.target.closest('[data-region]');
       if (regionButton) {
         const region = regionButton.dataset.region;
+        state.currentFilter = { kind: 'notDelivered', region };
         state.currentRows = rowsByRegion(region);
         els.modalTitle.textContent = `Região: ${region}`;
         els.modalSubtitle.textContent = `${number(state.currentRows.length)} pendentes encontrados`;
@@ -1395,6 +1690,9 @@
         refreshIcons();
       }
 
+      const removeDamageButton = event.target.closest('[data-remove-damage]');
+      if (removeDamageButton) removeDamageEntry(removeDamageButton.dataset.removeDamage);
+
       const viewJump = event.target.closest('[data-view-jump]');
       if (viewJump) setView(viewJump.dataset.viewJump);
 
@@ -1402,7 +1700,27 @@
       if (sortHeader) sortTableByHeader(sortHeader);
     });
 
+    document.body.addEventListener('change', event => {
+      const statusSelect = event.target.closest('[data-status-row]');
+      if (statusSelect) updateReceivedAction(statusSelect.dataset.statusRow, statusSelect.value);
+    });
+
+    document.body.addEventListener('input', event => {
+      const treatmentInput = event.target.closest('[data-treatment-row]');
+      if (treatmentInput) updateTreatment(treatmentInput.dataset.treatmentRow, treatmentInput.value);
+    });
+
+    document.body.addEventListener('focusout', event => {
+      const treatmentInput = event.target.closest('[data-treatment-row]');
+      if (treatmentInput && state.rows.length) saveCloudState();
+    });
+
     els.fileInput.addEventListener('change', event => handleFiles(event.target.files));
+    els.damageCep.addEventListener('input', updateDamagePreview);
+    els.damageForm.addEventListener('submit', event => {
+      event.preventDefault();
+      addDamageEntry();
+    });
     els.searchInput.addEventListener('input', renderSearch);
     els.modalSearch.addEventListener('input', renderModalRows);
     els.copyRowsBtn.addEventListener('click', () => copyRows(state.currentRows));
