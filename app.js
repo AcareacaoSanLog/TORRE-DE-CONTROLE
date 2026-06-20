@@ -145,6 +145,7 @@
     lhCityFilter: document.getElementById('lhCityFilter'),
     lhSearch: document.getElementById('lhSearch'),
     lhExportBtn: document.getElementById('lhExportBtn'),
+    lhClearBtn: document.getElementById('lhClearBtn'),
     lhTable: document.getElementById('lhTable'),
     lhRouteDefaultBtn: document.getElementById('lhRouteDefaultBtn'),
     lhRouteAllBtn: document.getElementById('lhRouteAllBtn'),
@@ -188,12 +189,15 @@
     toolsMenu: document.getElementById('toolsMenu'),
     monitorToggle: document.getElementById('monitorToggle'),
     monitorMenu: document.getElementById('monitorMenu'),
+    lhToggle: document.getElementById('lhToggle'),
+    lhMenu: document.getElementById('lhMenu'),
     cloudStatus: document.getElementById('cloudStatus'),
     loadCloudBtn: document.getElementById('loadCloudBtn'),
     saveCloudBtn: document.getElementById('saveCloudBtn')
   };
 
   const HISTORY_KEY = 'txf-plus-import-history-v1';
+  const LH_STORAGE_KEY = 'txf-plus-lh-control-v1';
   const HISTORY_LIMIT = 120;
 
   const columnHints = {
@@ -333,6 +337,55 @@
 
   function persistHistory() {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, HISTORY_LIMIT)));
+  }
+
+  function persistLhControl() {
+    try {
+      localStorage.setItem(LH_STORAGE_KEY, JSON.stringify({
+        savedAt: new Date().toISOString(),
+        rows: state.lhRows,
+        columns: state.lhColumns,
+        files: state.lhFiles
+      }));
+      return true;
+    } catch (error) {
+      console.warn('persistLhControl', error);
+      alert('A triagem LH foi importada, mas nao coube no armazenamento do navegador. Se apertar F5, talvez precise importar novamente.');
+      return false;
+    }
+  }
+
+  function loadLhControl() {
+    try {
+      const payload = JSON.parse(localStorage.getItem(LH_STORAGE_KEY) || 'null');
+      if (!payload || !Array.isArray(payload.rows)) return;
+      state.lhRows = payload.rows;
+      state.lhColumns = payload.columns || detectColumns(payload.rows);
+      state.lhFiles = Array.isArray(payload.files) ? payload.files : ['triagem LH salva'];
+      state.lhFilter = { status: 'all', city: '', search: '' };
+      state.lhRouteCities = [];
+      state.lhRouteSelectionTouched = false;
+    } catch (error) {
+      console.warn('loadLhControl', error);
+      localStorage.removeItem(LH_STORAGE_KEY);
+    }
+  }
+
+  function clearLhControl() {
+    state.lhRows = [];
+    state.lhColumns = {};
+    state.lhFiles = [];
+    state.lhFilter = { status: 'all', city: '', search: '' };
+    state.lhRouteCities = [];
+    state.lhRouteSelectionTouched = false;
+    localStorage.removeItem(LH_STORAGE_KEY);
+    if (els.lhFileInput) els.lhFileInput.value = '';
+    if (isLhModal()) {
+      state.currentRows = [];
+      if (els.modal?.open) els.modal.close();
+    }
+    renderLhControl();
+    if (document.querySelector('.view.active')?.id === 'lh-route') setView('lh');
   }
 
   function previousSnapshot() {
@@ -2257,7 +2310,7 @@
     renderLhControl();
     renderSearch();
     const activeView = document.querySelector('.view.active')?.id;
-    els.emptyState.classList.toggle('hidden', stats.total > 0 || activeView === 'lh');
+    els.emptyState.classList.toggle('hidden', stats.total > 0 || ['lh', 'lh-route'].includes(activeView));
     els.lastUpdate.textContent = stats.total ? new Date().toLocaleString('pt-BR') : 'Aguardando importação';
     refreshIcons();
   }
@@ -2319,6 +2372,7 @@
     state.lhFilter = { status: 'all', city: '', search: '' };
     state.lhRouteCities = [];
     state.lhRouteSelectionTouched = false;
+    persistLhControl();
     renderLhControl();
     setView('lh');
   }
@@ -2384,14 +2438,12 @@
     const text = [
       `ROTA LH - ${city}`,
       `Total: ${number(stats.total)}`,
-      `SOC LH: ${number(stats.socLH)}`,
-      `Hub Received: ${number(stats.received)}`,
       '',
       'Cidades selecionadas:',
       ...(state.lhRouteCities.length ? state.lhRouteCities.map(item => `- ${item}`) : ['- Nenhuma cidade selecionada']),
       '',
       'Cidade/Bairro:',
-      ...(bairros.length ? bairros.map(group => `- ${group.city} / ${group.bairro}: ${number(group.stats.total)} total | ${number(group.stats.socLH)} SOC LH | ${number(group.stats.received)} Received`) : ['- Nenhum bairro carregado'])
+      ...(bairros.length ? bairros.map(group => `- ${group.city} / ${group.bairro}: ${number(group.stats.total)} pacotes`) : ['- Nenhum bairro carregado'])
     ].join('\n');
     navigator.clipboard?.writeText(text);
   }
@@ -2712,8 +2764,6 @@
     const selectedBairros = lhBairroRouteGroups(selectedRows);
     const cards = [
       [selectedCities.length === 1 ? 'Total da cidade' : 'Total das cidades', selectedStats.total, 'Base CONTROLE LH'],
-      ['SOC LH', selectedStats.socLH, 'SOC_LHTransported'],
-      ['Hub Received', selectedStats.received, 'Pacotes recebidos no hub'],
       ['Bairros', selectedBairros.length, 'Bairros da rota selecionada']
     ];
     els.lhRouteSummary.innerHTML = selectedStats.total ? cards.map(([label, qty, note], index) => `
@@ -2733,11 +2783,9 @@
       <tr>
         <td>${html(group.city)} / ${html(group.bairro)}</td>
         <td>${number(group.stats.total)}</td>
-        <td>${number(group.stats.socLH)}</td>
-        <td>${number(group.stats.received)}</td>
         <td><button class="mini-button" data-lh-open='${html(JSON.stringify({ city: group.city, bairro: group.bairro }))}'>Abrir</button></td>
       </tr>
-    `).join('') : '<tr><td colspan="5">Escolha uma ou mais cidades da triagem LH.</td></tr>';
+    `).join('') : '<tr><td colspan="3">Escolha uma ou mais cidades da triagem LH.</td></tr>';
 
     const selectedCityGroups = cityGroups.filter(group => selectedSet.has(group.name));
     els.lhRouteSelectedCities.innerHTML = selectedCityGroups.length ? `
@@ -2756,7 +2804,7 @@
           <button class="route-selected-city" type="button" data-lh-route-city="${html(group.name)}" title="Remover ${html(group.name)} da rota LH">
             <span>${html(group.name)}</span>
             <strong>${number(group.stats.total)}</strong>
-            <small>${number(group.stats.socLH)} SOC LH | ${number(group.stats.received)} Received</small>
+            <small>${number(group.stats.total)} pacotes</small>
           </button>
         `).join('')}
       </div>
@@ -2768,12 +2816,10 @@
         <tr>
           <td>${html(group.name)}</td>
           <td>${number(group.stats.total)}</td>
-          <td>${number(group.stats.socLH)}</td>
-          <td>${number(group.stats.received)}</td>
           <td><button class="mini-button" data-lh-route-city="${html(group.name)}">${selected ? 'Remover' : 'Adicionar'}</button></td>
         </tr>
       `;
-    }).join('') : '<tr><td colspan="5">Nenhuma cidade LH carregada.</td></tr>';
+    }).join('') : '<tr><td colspan="3">Nenhuma cidade LH carregada.</td></tr>';
   }
 
   function renderLhStatusBars(rows, soc, received) {
@@ -2930,6 +2976,7 @@
     });
     els.monitorToggle.addEventListener('click', () => toggleMonitoring());
     els.toolsToggle.addEventListener('click', () => toggleTools());
+    els.lhToggle.addEventListener('click', () => toggleLhMenu());
 
     document.body.addEventListener('click', event => {
       const filterButton = event.target.closest('[data-filter]');
@@ -3082,6 +3129,7 @@
       renderLhControl();
     });
     els.lhExportBtn.addEventListener('click', exportLhControl);
+    els.lhClearBtn.addEventListener('click', clearLhControl);
     els.lhRouteDefaultBtn.addEventListener('click', () => {
       const cityGroups = groupedLhRouteStats(lhRelevantRows(), row => lhValue(row, 'city'));
       setLhRouteCities(routeCityDefaults(cityGroups));
@@ -3214,11 +3262,13 @@
   function setView(id) {
     document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === id));
     document.querySelectorAll('.nav-button').forEach(button => button.classList.toggle('active', button.dataset.view === id));
+    els.lhToggle.classList.toggle('active', ['lh', 'lh-route'].includes(id));
     const active = document.querySelector(`.nav-button[data-view="${id}"] span`);
     document.getElementById('viewTitle').textContent = active ? active.textContent : 'Dashboard';
     setToolsOpen(['history', 'search'].includes(id));
     setMonitoringOpen(['received', 'assigned'].includes(id));
-    if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0 || id === 'lh');
+    setLhMenuOpen(['lh', 'lh-route'].includes(id));
+    if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0 || ['lh', 'lh-route'].includes(id));
   }
 
   function toggleTools(force) {
@@ -3229,6 +3279,11 @@
   function toggleMonitoring(force) {
     const shouldOpen = typeof force === 'boolean' ? force : !els.monitorMenu.classList.contains('open');
     setMonitoringOpen(shouldOpen);
+  }
+
+  function toggleLhMenu(force) {
+    const shouldOpen = typeof force === 'boolean' ? force : !els.lhMenu.classList.contains('open');
+    setLhMenuOpen(shouldOpen);
   }
 
   function setToolsOpen(open) {
@@ -3243,12 +3298,19 @@
     els.monitorToggle.setAttribute('aria-expanded', String(open));
   }
 
+  function setLhMenuOpen(open) {
+    els.lhMenu.classList.toggle('open', open);
+    els.lhToggle.classList.toggle('open', open);
+    els.lhToggle.setAttribute('aria-expanded', String(open));
+  }
+
   function refreshIcons() {
     if (window.lucide) window.lucide.createIcons();
   }
 
   function init() {
     loadHistory();
+    loadLhControl();
     els.cepCount.textContent = number(Object.keys(cepMap).length);
     bindEvents();
     renderAll();
