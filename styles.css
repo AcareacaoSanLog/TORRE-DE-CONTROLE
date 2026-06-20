@@ -1605,35 +1605,79 @@ tr.clickable:hover { background: var(--surface-2); }
   gap: 10px;
 }
 
-.lh-stats span {
+.lh-stats span,
+.lh-kpi {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px;
-  background: #061524;
+  padding: 14px;
+  background: radial-gradient(circle at top right, rgba(34, 211, 238, .14), transparent 38%), #061524;
 }
 
 .lh-stats b,
 .lh-stats small,
-.lh-stats em {
+.lh-stats em,
+.lh-kpi b,
+.lh-kpi small,
+.lh-kpi em {
   display: block;
 }
 
-.lh-stats b {
+.lh-kpi {
+  min-height: 96px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lh-kpi:hover {
+  border-color: var(--cyan);
+  transform: translateY(-1px);
+}
+
+.lh-stats b,
+.lh-kpi b {
   color: var(--cyan);
-  font-size: 24px;
+  font-size: 30px;
+  line-height: 1.05;
   font-weight: 950;
 }
 
-.lh-stats small {
+.lh-stats small,
+.lh-kpi small {
   color: var(--text);
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.lh-stats em {
+.lh-stats em,
+.lh-kpi em {
   color: var(--muted);
   font-size: 12px;
   font-style: normal;
+}
+
+.lh-kpi-total {
+  border-color: rgba(36, 146, 255, .7);
+  background: radial-gradient(circle at top right, rgba(36, 146, 255, .28), transparent 42%), #061524;
+}
+
+.lh-kpi-soc {
+  border-color: rgba(34, 211, 238, .62);
+}
+
+.lh-kpi-received {
+  border-color: rgba(255, 139, 38, .58);
+  background: radial-gradient(circle at top right, rgba(255, 139, 38, .20), transparent 42%), #061524;
+}
+
+.lh-kpi-alert {
+  border-color: rgba(255, 87, 87, .72);
+  background: radial-gradient(circle at top right, rgba(255, 87, 87, .24), transparent 42%), #061524;
+}
+
+.lh-kpi-ok {
+  border-color: rgba(48, 211, 124, .55);
+  background: radial-gradient(circle at top right, rgba(48, 211, 124, .18), transparent 42%), #061524;
 }
 
 .lh-dashboard {
@@ -1695,6 +1739,15 @@ tr.clickable:hover { background: var(--surface-2); }
 
 .lh-status-line:hover {
   border-color: var(--cyan);
+}
+
+.lh-status-line.warning {
+  border-left: 4px solid var(--red);
+  background: linear-gradient(145deg, rgba(255, 87, 87, .12), #081827 58%);
+}
+
+.lh-status-line.warning em {
+  background: linear-gradient(90deg, var(--orange), var(--red));
 }
 
 button.lh-radar-line {
