@@ -457,10 +457,13 @@
         <section class="panel">
           <div class="panel-head">
             <h3>CONTROLE LH</h3>
-            <label class="mini-button lh-import-button">
-              Importar triagem
-              <input id="lhFileInput" type="file" multiple accept=".csv,.xlsx,.xls">
-            </label>
+            <div class="lh-head-actions">
+              <label class="mini-button lh-import-button">
+                Importar triagem
+                <input id="lhFileInput" type="file" multiple accept=".csv,.xlsx,.xls">
+              </label>
+              <button class="mini-button" id="lhExportBtn" type="button">Exportar CONTROLE LH</button>
+            </div>
           </div>
           <div class="lh-toolbar">
             <div class="lh-stats" id="lhStats"></div>
@@ -474,10 +477,78 @@
                 </select>
               </label>
               <label>
+                <span>Cidade</span>
+                <select id="lhCityFilter"></select>
+              </label>
+              <label>
                 <span>Buscar BR</span>
                 <input id="lhSearch" type="search" placeholder="Digite a BR ou tracking">
               </label>
-              <button class="import-button" id="lhExportBtn" type="button">Exportar CONTROLE LH</button>
+            </div>
+            <div class="lh-dashboard">
+              <section class="lh-panel">
+                <div class="panel-head"><h3>Resumo LH</h3></div>
+                <div class="lh-status-bars" id="lhStatusBars"></div>
+              </section>
+              <section class="lh-panel">
+                <div class="panel-head"><h3>Radar de cidades</h3></div>
+                <div class="lh-radar" id="lhCityRadar"></div>
+              </section>
+              <section class="lh-panel">
+                <div class="panel-head"><h3>Radar de bairros</h3></div>
+                <div class="lh-radar" id="lhBairroRadar"></div>
+              </section>
+            </div>
+            <div class="lh-route-block">
+              <div class="route-grid">
+                <section class="panel">
+                  <div class="panel-head">
+                    <h3>Calcular rota LH</h3>
+                    <button class="text-button" id="copyLhRouteBtn">Copiar rota LH</button>
+                  </div>
+                  <div class="route-picker">
+                    <div class="route-picker-head">
+                      <span>Cidades da triagem</span>
+                      <div class="route-picker-actions">
+                        <button class="mini-button" type="button" id="lhRouteDefaultBtn">Rota fixa</button>
+                        <button class="mini-button" type="button" id="lhRouteAllBtn">Todas</button>
+                        <button class="mini-button" type="button" id="lhRouteClearBtn">Limpar</button>
+                      </div>
+                    </div>
+                    <div id="lhRouteCityChecklist" class="route-city-checklist"></div>
+                  </div>
+                  <div id="lhRouteSummary" class="route-summary"></div>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-head">
+                    <h3>Bairros da rota LH</h3>
+                  </div>
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr><th>Cidade/Bairro</th><th>Total</th><th>SOC LH</th><th>Hub Received</th><th></th></tr>
+                      </thead>
+                      <tbody id="lhRouteBairroTable"></tbody>
+                    </table>
+                  </div>
+                  <div class="route-selected-cities" id="lhRouteSelectedCities"></div>
+                </section>
+              </div>
+
+              <section class="panel preview-panel">
+                <div class="panel-head">
+                  <h3>Todas as cidades LH</h3>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr><th>Cidade</th><th>Total</th><th>SOC LH</th><th>Hub Received</th><th></th></tr>
+                    </thead>
+                    <tbody id="lhRouteCityTable"></tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           </div>
           <div class="table-wrap tall">
