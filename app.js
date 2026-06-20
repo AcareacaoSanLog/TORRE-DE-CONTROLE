@@ -225,9 +225,9 @@
 
   const regionRules = [
     { name: 'Teixeira urbano', cities: ['Teixeira de Freitas'] },
-    { name: 'Extremo sul norte', cities: ['Itamaraju', 'Jucurucu', 'JucuruÃ§u', 'Prado', 'Alcobaca', 'AlcobaÃ§a'] },
-    { name: 'Costa e distritos', cities: ['Caravelas', 'Nova Vicosa', 'Nova ViÃ§osa', 'Posto da Mata', 'Mucuri'] },
-    { name: 'Interior oeste', cities: ['Medeiros Neto', 'Itanhem', 'ItanhÃ©m', 'Vereda', 'Lajedao', 'LajedÃ£o', 'Ibirapua', 'IbirapuÃ£'] }
+    { name: 'Extremo sul norte', cities: ['Itamaraju', 'Jucurucu', 'Jucuru?u', 'Prado', 'Alcobaca', 'Alcoba?a'] },
+    { name: 'Costa e distritos', cities: ['Caravelas', 'Nova Vicosa', 'Nova Vi?osa', 'Posto da Mata', 'Mucuri'] },
+    { name: 'Interior oeste', cities: ['Medeiros Neto', 'Itanhem', 'Itanh?m', 'Vereda', 'Lajedao', 'Lajed?o', 'Ibirapua', 'Ibirapu?'] }
   ];
 
   const statusConfig = {
@@ -451,7 +451,7 @@
             ? 'Nuvem LH: precisa atualizar o SQL do Supabase para liberar a Triagem LH.'
             : timeoutIssue
               ? 'Nuvem LH: envio demorou demais. Reimporte depois de atualizar o app.'
-              : 'Nuvem LH: nao foi possivel salvar a triagem.',
+              : 'Nuvem LH: não foi possível salvar a triagem.',
           'error'
         );
       }
@@ -477,7 +477,7 @@
       if (!options.silent) setCloudStatus(`Nuvem LH: triagem carregada de ${new Date(savedAt).toLocaleString('pt-BR')}.`, 'ok');
       return true;
     } catch (error) {
-      if (!options.silent) setCloudStatus('Nuvem LH: nao foi possivel carregar a triagem.', 'error');
+      if (!options.silent) setCloudStatus('Nuvem LH: não foi possível carregar a triagem.', 'error');
       console.warn('loadLhCloudState', error);
       return false;
     }
@@ -603,8 +603,32 @@
   }
 
   function setCloudStatus(message, type = '') {
-    els.cloudStatus.textContent = message;
+    els.cloudStatus.textContent = clean(message);
     els.cloudStatus.className = `cloud-status ${type}`.trim();
+  }
+
+  function repairVisibleText(root = document.body) {
+    if (!root) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const tag = node.parentElement?.tagName;
+        return tag === 'SCRIPT' || tag === 'STYLE' ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(node => {
+      const fixed = repairText(node.nodeValue);
+      if (fixed !== node.nodeValue) node.nodeValue = fixed;
+    });
+    root.querySelectorAll('[title], [aria-label], [placeholder]').forEach(element => {
+      ['title', 'aria-label', 'placeholder'].forEach(attr => {
+        if (!element.hasAttribute(attr)) return;
+        const current = element.getAttribute(attr);
+        const fixed = repairText(current);
+        if (fixed !== current) element.setAttribute(attr, fixed);
+      });
+    });
   }
 
   function cloudHeaders(extra = {}) {
@@ -724,7 +748,7 @@
       ...buildTreatmentRegistryFromRows(rows),
       ...(payload?.treatmentRegistry || {})
     };
-    state.importFiles = Array.isArray(payload?.files) ? payload.files : ['importaÃ§Ã£o salva na nuvem'];
+    state.importFiles = Array.isArray(payload?.files) ? payload.files : ['importação salva na nuvem'];
     state.importId = `cloud-${payload?.savedAt || Date.now()}`;
     state.routeCities = [];
     state.routeCity = '';
@@ -752,7 +776,7 @@
       history: normalizedHistory()
     };
 
-    setCloudStatus('Nuvem: salvando Ãºltima importaÃ§Ã£o...', 'warn');
+    setCloudStatus('Nuvem: salvando última importação...', 'warn');
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?on_conflict=id`, {
         method: 'POST',
@@ -760,10 +784,10 @@
         body: JSON.stringify({ id: CLOUD_ID, payload, updated_at: payload.savedAt })
       });
       if (!response.ok) throw new Error(await response.text());
-      setCloudStatus(`Nuvem: Ãºltima importaÃ§Ã£o salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
+      setCloudStatus(`Nuvem: última importação salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
       return true;
     } catch (error) {
-      setCloudStatus('Nuvem: nÃ£o foi possÃ­vel salvar. Confira se a tabela do Supabase foi criada.', 'error');
+      setCloudStatus('Nuvem: não foi possível salvar. Confira se a tabela do Supabase foi criada.', 'error');
       console.warn('saveCloudState', error);
       return false;
     }
@@ -776,7 +800,7 @@
   }
 
   async function loadCloudState(options = {}) {
-    if (!options.silent) setCloudStatus('Nuvem: carregando Ãºltima importaÃ§Ã£o...', 'warn');
+    if (!options.silent) setCloudStatus('Nuvem: carregando última importação...', 'warn');
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?id=eq.${encodeURIComponent(CLOUD_ID)}&select=payload,updated_at`, {
         headers: cloudHeaders()
@@ -784,16 +808,16 @@
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       if (!data.length) {
-        setCloudStatus('Nuvem: nenhuma importaÃ§Ã£o salva ainda.', 'warn');
+        setCloudStatus('Nuvem: nenhuma importação salva ainda.', 'warn');
         return false;
       }
       applyCloudRows(data[0].payload);
       const savedAt = data[0].updated_at || data[0].payload?.savedAt;
-      setCloudStatus(`Nuvem: importaÃ§Ã£o carregada de ${new Date(savedAt).toLocaleString('pt-BR')}.`, 'ok');
+      setCloudStatus(`Nuvem: importação carregada de ${new Date(savedAt).toLocaleString('pt-BR')}.`, 'ok');
       setView('dashboard');
       return true;
     } catch (error) {
-      setCloudStatus(options.silent ? 'Nuvem: configure a tabela para carregar dados compartilhados.' : 'Nuvem: nÃ£o foi possÃ­vel carregar. Confira a tabela do Supabase.', options.silent ? 'warn' : 'error');
+      setCloudStatus(options.silent ? 'Nuvem: configure a tabela para carregar dados compartilhados.' : 'Nuvem: não foi possível carregar. Confira a tabela do Supabase.', options.silent ? 'warn' : 'error');
       console.warn('loadCloudState', error);
       return false;
     }
@@ -993,9 +1017,9 @@
     const missingColumns = requiredColumns.filter(type => !state.columns[type]);
     missingColumns.forEach(type => {
       issues.push({
-        type: 'Coluna obrigatÃ³ria',
-        title: `${columnLabels[type]} nÃ£o mapeada`,
-        detail: 'Corrija na tela Colunas antes de analisar a operaÃ§Ã£o.',
+        type: 'Coluna obrigatéria',
+        title: `${columnLabels[type]} não mapeada`,
+        detail: 'Corrija na tela Colunas antes de analisar a operação.',
         filter: null
       });
     });
@@ -1011,7 +1035,7 @@
         issues.push({ type: 'Tracking vazio', title: tracking, detail: `Arquivo: ${row.__file || ''}`, filter: null });
       }
       if (trackingCounts.get(tracking) > 1) {
-        issues.push({ type: 'Tracking duplicado', title: tracking, detail: `${trackingCounts.get(tracking)} ocorrÃªncias encontradas`, filter: { tracking } });
+        issues.push({ type: 'Tracking duplicado', title: tracking, detail: `${trackingCounts.get(tracking)} ocorr?ncias encontradas`, filter: { tracking } });
       }
       if (!cep) {
         issues.push({ type: 'CEP vazio', title: tracking, detail: `${status} | ${driver}`, filter: { tracking } });
@@ -1058,7 +1082,7 @@
         <span><strong>${html(issue.title)}</strong><span>${html(issue.detail)}</span></span>
         <b class="severity ${issue.type.includes('Coluna') || issue.type.includes('duplicado') ? 'high' : 'normal'}">${issue.filter ? 'Abrir' : 'Ajustar'}</b>
       </button>
-    `).join('') : '<div class="issue-item"><b class="issue-type">OK</b><span><strong>Sem problemas crÃ­ticos</strong><span>NÃ£o encontramos inconsistÃªncias na importaÃ§Ã£o atual.</span></span><b class="severity good">OK</b></div>';
+    `).join('') : '<div class="issue-item"><b class="issue-type">OK</b><span><strong>Sem problemas críticos</strong><span>Não encontramos inconsistências na importação atual.</span></span><b class="severity good">OK</b></div>';
   }
 
   function renderColumnReview() {
@@ -1070,11 +1094,11 @@
     if (!state.rows.length) {
       els.columnMapper.innerHTML = '<p class="muted">Importe uma planilha para revisar as colunas.</p>';
       els.columnQuality.innerHTML = '';
-      els.previewRows.innerHTML = '<tr><td colspan="7">Aguardando importaÃ§Ã£o.</td></tr>';
+      els.previewRows.innerHTML = '<tr><td colspan="7">Aguardando importação.</td></tr>';
       return;
     }
 
-    const options = ['<option value="">NÃ£o usar</option>'].concat(
+    const options = ['<option value="">Não usar</option>'].concat(
       state.headers.map(header => `<option value="${html(header)}">${html(header)}</option>`)
     ).join('');
 
@@ -1083,7 +1107,7 @@
       const current = state.columns[type] || '';
       const coverage = columnCompleteness(type);
       const tag = requiredColumns.includes(type)
-        ? '<span class="column-required">ObrigatÃ³ria</span>'
+        ? '<span class="column-required">Obrigatória</span>'
         : '<span class="column-optional">Opcional</span>';
       return `
         <div class="column-field">
@@ -1091,7 +1115,7 @@
           <select data-column-type="${html(type)}">
             ${options}
           </select>
-          <small>${detected ? `Detectada: ${html(detected)}` : 'NÃ£o detectada automaticamente'} | ${number(coverage)} preenchidos</small>
+          <small>${detected ? `Detectada: ${html(detected)}` : 'Não detectada automaticamente'} | ${number(coverage)} preenchidos</small>
         </div>
       `;
     }).join('');
@@ -1382,8 +1406,8 @@
     const items = [
       ['Total', stats.total, 'Todos os pacotes', 'all'],
       ['Delivered', stats.delivered, percent(stats.delivered, stats.total), 'Delivered'],
-      ['Received', stats.received, 'Aguardando avanÃ§o', 'Hub_Received'],
-      ['Assigned', stats.assigned, 'AtribuÃ­dos no hub', 'Hub_Assigned'],
+      ['Received', stats.received, 'Aguardando avanço', 'Hub_Received'],
+      ['Assigned', stats.assigned, 'Atribuídos no hub', 'Hub_Assigned'],
       ['Delivering', stats.delivering, 'Em rota', 'Delivering'],
       ['SOC LH', stats.socLH, 'Transportado no line haul', 'SOC_LHTransported'],
       ['OnHold', stats.hold, percent(stats.hold, stats.total), 'OnHold']
@@ -1418,7 +1442,7 @@
     els.dsText.textContent = `${percent(stats.delivered, stats.total)} entregue de ${number(stats.total)} pacotes.`;
 
     els.targetPace.innerHTML = [
-      ['Pendentes totais', pending, 'Pacotes ainda nÃ£o finalizados'],
+      ['Pendentes totais', pending, 'Pacotes ainda não finalizados'],
       ['Faltam para SLA', needSla, 'Meta oficial de 99,5%'],
       ['Faltam para DS', needDs, 'Meta oficial de 98%'],
       ['Ritmo sugerido', perHour, `${number(hoursLeft)} ${plural(hoursLeft, 'hora operacional restante', 'horas operacionais restantes')} hoje`]
@@ -1432,11 +1456,11 @@
     const topPending = Array.from(stats.byCityPending.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
     const levers = [
       ['Atacar OnHold', stats.hold, 'Maior risco de travar SLA e DS', 'OnHold'],
-      ['AvanÃ§ar Received', stats.received, 'Transforma fila parada em aÃ§Ã£o de hub', 'Hub_Received'],
-      ['Acompanhar Delivering', stats.delivering, 'Confirma o que jÃ¡ estÃ¡ em rota', 'Delivering']
+      ['Avançar Received', stats.received, 'Transforma fila parada em ação de hub', 'Hub_Received'],
+      ['Acompanhar Delivering', stats.delivering, 'Confirma o que já está em rota', 'Delivering']
     ].filter(item => item[1] > 0);
     if (topPending.length) {
-      levers.push([`Top cidade: ${topPending[0][0]}`, topPending[0][1], 'Maior concentraÃ§Ã£o de pendentes', 'notDelivered']);
+      levers.push([`Top cidade: ${topPending[0][0]}`, topPending[0][1], 'Maior concentração de pendentes', 'notDelivered']);
     }
     els.targetLevers.innerHTML = levers.length ? levers.map(([label, qty, note, filter]) => `
       <button class="metric-row" type="button" data-filter="${html(filter)}">
@@ -1484,8 +1508,8 @@
   function renderPriority(stats) {
     const rows = [
       ['OnHold', stats.hold, 'Pacotes precisam de tratativa operacional', 'critical', 'OnHold'],
-      ['Received', stats.received, 'Pacotes aguardando avanÃ§o de status', 'high', 'Hub_Received'],
-      ['Assigned', stats.assigned, 'Pacotes atribuÃ­dos ou em separaÃ§Ã£o', 'normal', 'Hub_Assigned'],
+      ['Received', stats.received, 'Pacotes aguardando avanço de status', 'high', 'Hub_Received'],
+      ['Assigned', stats.assigned, 'Pacotes atribuídos ou em separação', 'normal', 'Hub_Assigned'],
       ['Delivering', stats.delivering, 'Pacotes em rota para acompanhar', 'normal', 'Delivering'],
       ['SOC LH', stats.socLH, 'Pacotes transportados no line haul', 'normal', 'SOC_LHTransported']
     ].filter(item => item[1] > 0);
@@ -1495,7 +1519,7 @@
         <span><strong>${html(title)}: ${number(qty)}</strong><span>${html(desc)}</span></span>
         <b class="severity ${severity}">${severityLabel(severity)}</b>
       </button>
-    `).join('') : `<div class="list-row"><span><strong>Nenhuma pendÃªncia crÃ­tica</strong><span>Importe ou confira os arquivos para validar a operaÃ§Ã£o.</span></span><b class="severity good">OK</b></div>`;
+    `).join('') : `<div class="list-row"><span><strong>Nenhuma pendência crítica</strong><span>Importe ou confira os arquivos para validar a operação.</span></span><b class="severity good">OK</b></div>`;
 
     els.missionBadge.textContent = rows.length;
     els.missionList.innerHTML = rows.length ? rows.map(([title, qty, desc, severity, filter]) => `
@@ -1503,11 +1527,11 @@
         <span><strong>${html(title)}</strong><span>${number(qty)} pacotes. ${html(desc)}.</span></span>
         <b class="severity ${severity}">${severityLabel(severity)}</b>
       </button>
-    `).join('') : '<div class="list-row"><span><strong>OperaÃ§Ã£o sem fila crÃ­tica</strong><span>NÃ£o hÃ¡ itens pendentes apÃ³s a importaÃ§Ã£o atual.</span></span><b class="severity good">OK</b></div>';
+    `).join('') : '<div class="list-row"><span><strong>Operação sem fila crítica</strong><span>Não há itens pendentes após a importação atual.</span></span><b class="severity good">OK</b></div>';
   }
 
   function severityLabel(severity) {
-    return { critical: 'CrÃ­tico', high: 'Alto', normal: 'Monitorar', good: 'OK' }[severity] || 'Info';
+    return { critical: 'Cr?tico', high: 'Alto', normal: 'Monitorar', good: 'OK' }[severity] || 'Info';
   }
 
   function detailTitle(kind) {
@@ -1571,7 +1595,7 @@
           <div class="city-chips">
             ${topCities.map(([city, qty]) => `<button class="city-chip" type="button" data-city="${html(city)}">${html(city)} ${number(qty)}</button>`).join('')}
           </div>
-          <button class="mini-button" data-region="${html(region.name)}">Abrir pendentes da regiÃ£o</button>
+          <button class="mini-button" data-region="${html(region.name)}">Abrir pendentes da região</button>
         </article>
       `;
     }).join('') : '<p class="muted">Importe os dados para gerar o mapa operacional.</p>';
@@ -1582,7 +1606,7 @@
       return { label: 'Prioridade alta', className: 'high' };
     }
     if (region.score >= 25 || region.pending >= 30) {
-      return { label: 'Prioridade mÃ©dia', className: 'medium' };
+      return { label: 'Prioridade m?dia', className: 'medium' };
     }
     return { label: 'Prioridade baixa', className: 'low' };
   }
@@ -1602,7 +1626,7 @@
         <span><strong>${html(item.title)}</strong><span>${html(item.detail)}</span></span>
         <b class="severity ${html(item.severity)}">${html(severityLabel(item.severity))}</b>
       </button>
-    `).join('') : '<div class="action-item"><b class="action-index">OK</b><span><strong>Sem plano crÃ­tico</strong><span>Importe os dados para gerar prioridades.</span></span><b class="severity good">OK</b></div>';
+    `).join('') : '<div class="action-item"><b class="action-index">OK</b><span><strong>Sem plano crítico</strong><span>Importe os dados para gerar prioridades.</span></span><b class="severity good">OK</b></div>';
   }
 
   function buildActionItems(stats, snapshot) {
@@ -1610,15 +1634,15 @@
     if (stats.hold > 0) {
       items.push({
         title: `Tratar OnHold (${number(stats.hold)})`,
-        detail: 'Prioridade mÃ¡xima: remover bloqueios antes de atacar volume.',
+        detail: 'Prioridade m?xima: remover bloqueios antes de atacar volume.',
         filter: 'OnHold',
         severity: 'critical'
       });
     }
     if (stats.received > 0) {
       items.push({
-        title: `AvanÃ§ar Received (${number(stats.received)})`,
-        detail: 'Separar por cidade/bairro e transformar fila parada em avanÃ§o operacional.',
+        title: `Avançar Received (${number(stats.received)})`,
+        detail: 'Separar por cidade/bairro e transformar fila parada em avanço operacional.',
         filter: 'Hub_Received',
         severity: 'high'
       });
@@ -1626,7 +1650,7 @@
     if (stats.assigned > 0) {
       items.push({
         title: `Conferir Assigned (${number(stats.assigned)})`,
-        detail: 'Validar atribuiÃ§Ã£o, separaÃ§Ã£o e prÃ³ximos passos no hub.',
+        detail: 'Validar atribuição, separação e próximos passos no hub.',
         filter: 'Hub_Assigned',
         severity: 'normal'
       });
@@ -1642,7 +1666,7 @@
     if (stats.socLH > 0) {
       items.push({
         title: `Acompanhar SOC LH (${number(stats.socLH)})`,
-        detail: 'Pacotes transportados no line haul para seguir o avanÃ§o atÃ© rota ou baixa.',
+        detail: 'Pacotes transportados no line haul para seguir o avanço até rota ou baixa.',
         filter: 'SOC_LHTransported',
         severity: 'normal'
       });
@@ -1661,22 +1685,22 @@
 
   function buildManagerText(snapshot, previous, actionItems) {
     const diff = previous ? [
-      `VariaÃ§Ã£o vs importaÃ§Ã£o anterior:`,
+      `Variação vs importação anterior:`,
       `Delivered: ${signed(snapshot.delivered - previous.delivered)}`,
       `Pendentes: ${signed(snapshot.pending - previous.pending)}`,
       `OnHold: ${signed(snapshot.hold - previous.hold)}`,
       `SLA: ${signed(snapshot.sla - previous.sla, ' p.p.')}`
-    ] : ['Primeira importaÃ§Ã£o salva no histÃ³rico desta sessÃ£o.'];
+    ] : ['Primeira importação salva no histórico desta sessão.'];
     const topCityText = snapshot.topCities.length
       ? snapshot.topCities.slice(0, 5).map(([city, qty], index) => `${index + 1}. ${city}: ${number(qty)} ${plural(qty, 'pendente', 'pendentes')}`).join('\n')
       : 'Sem cidades pendentes.';
     const actions = actionItems.length
       ? actionItems.map((item, index) => `${index + 1}. ${item.title}: ${item.detail}`).join('\n')
-      : 'Sem aÃ§Ã£o crÃ­tica identificada.';
+      : 'Sem ação crítica identificada.';
 
     return [
       'RESUMO GERENCIAL - TORRE DE CONTROLE TXF',
-      `AtualizaÃ§Ã£o: ${new Date(snapshot.date).toLocaleString('pt-BR')}`,
+      `Atualização: ${new Date(snapshot.date).toLocaleString('pt-BR')}`,
       `Arquivos: ${snapshot.files.join(', ') || 'sem nome'}`,
       '',
       `Total: ${number(snapshot.total)}`,
@@ -1686,10 +1710,10 @@
       '',
       ...diff,
       '',
-      'Cidades crÃ­ticas:',
+      'Cidades críticas:',
       topCityText,
       '',
-      'Plano de aÃ§Ã£o:',
+      'Plano de ação:',
       actions
     ].join('\n');
   }
@@ -1734,8 +1758,8 @@
 
   function renderHistoryInsights() {
     if (!state.history.length) {
-      els.historyEvolution.innerHTML = '<p class="muted">Salve ao menos uma importaÃ§Ã£o para acompanhar evoluÃ§Ã£o.</p>';
-      els.historyCityChanges.innerHTML = '<p class="muted">Com duas importaÃ§Ãµes, o painel mostra cidades que melhoraram ou pioraram.</p>';
+      els.historyEvolution.innerHTML = '<p class="muted">Salve ao menos uma importação para acompanhar evolução.</p>';
+      els.historyCityChanges.innerHTML = '<p class="muted">Com duas importações, o painel mostra cidades que melhoraram ou pioraram.</p>';
       return;
     }
 
@@ -1754,7 +1778,7 @@
             <strong>${number(latest)}</strong>
             <b class="delta ${tone}">${html(signed(delta))}</b>
           </div>
-          <div class="spark-bars" aria-label="EvoluÃ§Ã£o de ${html(metric.label)}">
+          <div class="spark-bars" aria-label="Evolução de ${html(metric.label)}">
             ${values.map(value => `<span style="height:${Math.max(8, value / max * 52)}px" title="${number(value)}"></span>`).join('')}
           </div>
         </article>
@@ -1778,7 +1802,7 @@
 
   function renderCityChanges(current, previous) {
     if (!current || !previous) {
-      els.historyCityChanges.innerHTML = '<p class="muted">Salve uma segunda importaÃ§Ã£o para comparar cidades.</p>';
+      els.historyCityChanges.innerHTML = '<p class="muted">Salve uma segunda importação para comparar cidades.</p>';
       return;
     }
 
@@ -1823,13 +1847,13 @@
         </span>
         <b>${signed(item.delta)}</b>
       </button>
-    `).join('') : '<div class="city-change empty"><span><strong>Nenhuma cidade</strong><small>Sem variaÃ§Ã£o relevante.</small></span><b>0</b></div>';
+    `).join('') : '<div class="city-change empty"><span><strong>Nenhuma cidade</strong><small>Sem variação relevante.</small></span><b>0</b></div>';
   }
 
   function renderHistory() {
     renderHistoryInsights();
     if (!state.history.length) {
-      els.historyList.innerHTML = '<div class="history-item"><strong>Nenhuma importaÃ§Ã£o salva</strong><span>Aplique o mapeamento de colunas para salvar o primeiro histÃ³rico.</span></div>';
+      els.historyList.innerHTML = '<div class="history-item"><strong>Nenhuma importação salva</strong><span>Aplique o mapeamento de colunas para salvar o primeiro histórico.</span></div>';
       return;
     }
     els.historyList.innerHTML = state.history.map(item => `
@@ -2069,7 +2093,7 @@
     }
     const lookup = damageLookupFromTracking(tracking);
     if (!lookup) {
-      els.damageCepPreview.textContent = 'BR nÃ£o encontrada';
+      els.damageCepPreview.textContent = 'BR não encontrada';
       els.damageCityPreview.textContent = 'Importe a planilha';
       els.damageBairroPreview.textContent = 'ou confira a BR';
       return;
@@ -2156,7 +2180,7 @@
     renderAll();
     saveCloudState();
     if (missing.length) {
-      alert(`${number(added.length)} avaria(s) adicionada(s). ${number(missing.length)} BR(s) nÃ£o encontrada(s): ${missing.map(item => item.tracking).join(', ')}`);
+      alert(`${number(added.length)} avaria(s) adicionada(s). ${number(missing.length)} BR(s) não encontrada(s): ${missing.map(item => item.tracking).join(', ')}`);
     }
   }
 
@@ -2232,7 +2256,7 @@
   }
 
   function routeCityDefaults(cityGroups) {
-    const defaultCities = ['Medeiros Neto', 'Nova ViÃ§osa', 'Posto da Mata'];
+    const defaultCities = ['Medeiros Neto', 'Nova Vi?osa', 'Posto da Mata'];
     const available = new Map(cityGroups.map(group => [removeAccents(group.name), group.name]));
     const found = defaultCities.map(city => available.get(removeAccents(city))).filter(Boolean);
     return found.length ? found : cityGroups.slice(0, 1).map(group => group.name);
@@ -2276,7 +2300,7 @@
       ['Delivered', stats.delivered, `${percent(stats.delivered, stats.total)} finalizado`],
       ['Pendentes', routePending(stats), 'Ainda exigem acompanhamento'],
       ['Received', stats.received, 'No hub ou avaria cadastrada'],
-      ['Assigned', stats.assigned, 'AtribuÃ­dos/separaÃ§Ã£o'],
+      ['Assigned', stats.assigned, 'Atribuídos/separação'],
       ['Delivering', stats.delivering, 'Em rota'],
       ['SOC LH', stats.socLH, 'Transportado no line haul'],
       ['OnHold', stats.hold, 'Com tratativa operacional']
@@ -2332,7 +2356,7 @@
           <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'all', city: group.city, bairro: group.bairro }))}'>Abrir</button></td>
         </tr>
       `;
-    }).join('') : '<tr><td colspan="10">Escolha uma ou mais cidades apÃ³s importar a planilha.</td></tr>';
+    }).join('') : '<tr><td colspan="10">Escolha uma ou mais cidades após importar a planilha.</td></tr>';
 
     const selectedCityGroups = cityGroups.filter(group => selectedSet.has(group.name));
     els.routeSelectedCities.innerHTML = selectedCityGroups.length ? `
@@ -2341,7 +2365,7 @@
           <strong>Cidades selecionadas</strong>
           <span>${number(selectedStats.total)} ${plural(selectedStats.total, 'pacote', 'pacotes')} no total</span>
         </div>
-        <div class="route-view-toggle" aria-label="Modo de visualizaÃ§Ã£o">
+        <div class="route-view-toggle" aria-label="Modo de visualização">
           <button class="mini-button ${state.routeViewMode === 'grid' ? 'active' : ''}" type="button" data-route-view="grid">Lado a lado</button>
           <button class="mini-button ${state.routeViewMode === 'list' ? 'active' : ''}" type="button" data-route-view="list">Um abaixo do outro</button>
         </div>
@@ -2424,14 +2448,15 @@
     renderSearch();
     const activeView = document.querySelector('.view.active')?.id;
     els.emptyState.classList.toggle('hidden', stats.total > 0 || ['lh', 'lh-route'].includes(activeView));
-    els.lastUpdate.textContent = stats.total ? new Date().toLocaleString('pt-BR') : 'Aguardando importaÃ§Ã£o';
+    els.lastUpdate.textContent = stats.total ? new Date().toLocaleString('pt-BR') : 'Aguardando importação';
+    repairVisibleText();
     refreshIcons();
   }
 
   async function handleFiles(files) {
     if (!files || !files.length) return;
     if (typeof XLSX === 'undefined') {
-      alert('A biblioteca XLSX nÃ£o carregou. Abra com internet ativa para importar planilhas.');
+      alert('A biblioteca XLSX não carregou. Abra com internet ativa para importar planilhas.');
       return;
     }
     captureTreatmentRegistryFromRows();
@@ -2467,7 +2492,7 @@
   async function handleLhFiles(files) {
     if (!files || !files.length) return;
     if (typeof XLSX === 'undefined') {
-      alert('A biblioteca XLSX nÃ£o carregou. Abra com internet ativa para importar a triagem.');
+      alert('A biblioteca XLSX não carregou. Abra com internet ativa para importar a triagem.');
       return;
     }
     const allRows = [];
@@ -2843,7 +2868,7 @@
       ['Total LH', total, `${number(state.lhFiles.length)} ${plural(state.lhFiles.length, 'arquivo', 'arquivos')} importado${state.lhFiles.length === 1 ? '' : 's'}`, 'total'],
       ['SOC LH', soc, `${percent(soc, total)} da triagem`, 'soc'],
       ['Hub Received', received, `${percent(received, total)} da triagem`, 'received'],
-      ['Outros status', other, other ? 'Verificar status fora do padrao' : 'Nenhum status diferente', other ? 'alert' : 'ok']
+      ['Outros status', other, other ? 'Verificar status fora do padrão' : 'Nenhum status diferente', other ? 'alert' : 'ok']
     ].map(([label, qty, note, tone]) => `
       <button class="lh-kpi lh-kpi-${tone}" type="button" data-lh-kpi="${html(tone)}">
         <b>${number(qty)}</b>
@@ -2921,7 +2946,7 @@
           <strong>Cidades selecionadas</strong>
           <span>${number(selectedStats.total)} ${plural(selectedStats.total, 'pacote', 'pacotes')} no total</span>
         </div>
-        <div class="route-view-toggle" aria-label="Modo de visualizaÃƒÂ§ÃƒÂ£o">
+        <div class="route-view-toggle" aria-label="Modo de visualização">
           <button class="mini-button ${state.lhRouteViewMode === 'grid' ? 'active' : ''}" type="button" data-lh-route-view="grid">Lado a lado</button>
           <button class="mini-button ${state.lhRouteViewMode === 'list' ? 'active' : ''}" type="button" data-lh-route-view="list">Um abaixo do outro</button>
         </div>
@@ -3074,7 +3099,7 @@
 
   function downloadRowsCsv(rows, filename) {
     const includeTreatment = rows.some(row => row.__txfTratativa || row.__txfStatusAction);
-    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver', 'Arquivo'].concat(includeTreatment ? ['AÃ§Ã£o', 'Tratativa'] : []);
+    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver', 'Arquivo'].concat(includeTreatment ? ['Ação', 'Tratativa'] : []);
     const body = rows.map(row => [
       value(row, 'tracking'),
       statusOf(row),
@@ -3144,7 +3169,7 @@
         const region = regionButton.dataset.region;
         state.currentFilter = { kind: 'notDelivered', region };
         state.currentRows = rowsByRegion(region);
-        els.modalTitle.textContent = `RegiÃ£o: ${region}`;
+        els.modalTitle.textContent = `Regi?o: ${region}`;
         els.modalSubtitle.textContent = `${number(state.currentRows.length)} pendentes encontrados`;
         els.modalSearch.value = '';
         renderModalRows();
@@ -3330,12 +3355,12 @@
     els.modalSearch.addEventListener('input', renderModalRows);
     els.copyRowsBtn.addEventListener('click', () => isLhModal() ? copyLhRows(state.currentRows) : copyRows(state.currentRows));
     els.copySummaryBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar o resumo.'));
-    els.copyMissionBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar a missÃ£o.'));
+    els.copyMissionBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar a miss?o.'));
     els.copyMapBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.mapSummary || 'Importe os arquivos para gerar o mapa operacional.'));
     els.copyRouteBtn.addEventListener('click', copyRouteSummary);
     els.copyLhRouteBtn.addEventListener('click', copyLhRouteSummary);
     els.copyManagerBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.managerText || 'Importe os arquivos para gerar o resumo gerencial.'));
-    els.copyActionPlanBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.actionPlanText || 'Importe os arquivos para gerar o plano de aÃ§Ã£o.'));
+    els.copyActionPlanBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.actionPlanText || 'Importe os arquivos para gerar o plano de ação.'));
     els.downloadPendingBtn.addEventListener('click', downloadPending);
     els.saveCloudBtn.addEventListener('click', () => saveCloudState());
     els.loadCloudBtn.addEventListener('click', () => loadCloudState());
@@ -3408,6 +3433,7 @@
     setMonitoringOpen(['received', 'assigned'].includes(id));
     setLhMenuOpen(['lh', 'lh-route'].includes(id));
     if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0 || ['lh', 'lh-route'].includes(id));
+    repairVisibleText();
   }
 
   function toggleTools(force) {
@@ -3453,6 +3479,7 @@
     els.cepCount.textContent = number(Object.keys(cepMap).length);
     bindEvents();
     renderAll();
+    repairVisibleText();
     refreshIcons();
     loadCloudState({ silent: true });
     loadLhCloudState({ silent: true });
