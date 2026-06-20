@@ -16,6 +16,7 @@
   const SUPABASE_KEY = 'sb_publishable_5W-VMD2kk7OmRP1vpEYJ4g_TZCUB93g';
   const CLOUD_TABLE = 'dashboard_state';
   const CLOUD_ID = 'torre-controle-txf-latest';
+  const CLOUD_LH_ID = 'torre-controle-txf-lh';
   let cloudSaveTimer = null;
 
   const state = {
@@ -371,6 +372,75 @@
     }
   }
 
+  function lhCloudPayload() {
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      files: state.lhFiles.slice(),
+      rows: state.lhRows,
+      columns: state.lhColumns
+    };
+  }
+
+  function applyLhCloudPayload(payload) {
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    state.lhRows = rows;
+    state.lhColumns = payload?.columns || detectColumns(rows);
+    state.lhFiles = Array.isArray(payload?.files) ? payload.files : [];
+    state.lhFilter = { status: 'all', city: '', search: '' };
+    state.lhRouteCities = [];
+    state.lhRouteSelectionTouched = false;
+    if (rows.length) persistLhControl();
+    else localStorage.removeItem(LH_STORAGE_KEY);
+    renderLhControl();
+  }
+
+  async function saveLhCloudState(options = {}) {
+    if (!state.lhRows.length && !options.allowEmpty) {
+      if (!options.silent) setCloudStatus('Nuvem LH: importe a triagem antes de salvar.', 'warn');
+      return false;
+    }
+    const payload = lhCloudPayload();
+    if (!options.silent) setCloudStatus('Nuvem LH: salvando triagem...', 'warn');
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?on_conflict=id`, {
+        method: 'POST',
+        headers: cloudHeaders({ Prefer: 'resolution=merge-duplicates,return=representation' }),
+        body: JSON.stringify({ id: CLOUD_LH_ID, payload, updated_at: payload.savedAt })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      if (!options.silent) setCloudStatus(`Nuvem LH: triagem salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
+      return true;
+    } catch (error) {
+      if (!options.silent) setCloudStatus('Nuvem LH: nao foi possivel salvar a triagem.', 'error');
+      console.warn('saveLhCloudState', error);
+      return false;
+    }
+  }
+
+  async function loadLhCloudState(options = {}) {
+    if (!options.silent) setCloudStatus('Nuvem LH: carregando triagem...', 'warn');
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?id=eq.${encodeURIComponent(CLOUD_LH_ID)}&select=payload,updated_at`, {
+        headers: cloudHeaders()
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      if (!data.length) {
+        if (!options.silent) setCloudStatus('Nuvem LH: nenhuma triagem salva ainda.', 'warn');
+        return false;
+      }
+      applyLhCloudPayload(data[0].payload);
+      const savedAt = data[0].updated_at || data[0].payload?.savedAt;
+      if (!options.silent) setCloudStatus(`Nuvem LH: triagem carregada de ${new Date(savedAt).toLocaleString('pt-BR')}.`, 'ok');
+      return true;
+    } catch (error) {
+      if (!options.silent) setCloudStatus('Nuvem LH: nao foi possivel carregar a triagem.', 'error');
+      console.warn('loadLhCloudState', error);
+      return false;
+    }
+  }
+
   function clearLhControl() {
     state.lhRows = [];
     state.lhColumns = {};
@@ -386,6 +456,7 @@
     }
     renderLhControl();
     if (document.querySelector('.view.active')?.id === 'lh-route') setView('lh');
+    saveLhCloudState({ allowEmpty: true, silent: true });
   }
 
   function previousSnapshot() {
@@ -2375,6 +2446,7 @@
     persistLhControl();
     renderLhControl();
     setView('lh');
+    await saveLhCloudState();
   }
 
   function exportLhControl() {
@@ -3339,6 +3411,7 @@
     renderAll();
     refreshIcons();
     loadCloudState({ silent: true });
+    loadLhCloudState({ silent: true });
   }
 
   init();
