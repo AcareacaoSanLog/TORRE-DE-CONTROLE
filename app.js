@@ -16,7 +16,6 @@
   const SUPABASE_KEY = 'sb_publishable_5W-VMD2kk7OmRP1vpEYJ4g_TZCUB93g';
   const CLOUD_TABLE = 'dashboard_state';
   const CLOUD_ID = 'torre-controle-txf-latest';
-  const CLOUD_LH_ID = 'torre-controle-txf-lh';
   let cloudSaveTimer = null;
 
   const state = {
@@ -58,17 +57,6 @@
       sort: 'desc',
       search: ''
     },
-    lhRows: [],
-    lhColumns: {},
-    lhFiles: [],
-    lhFilter: {
-      status: 'all',
-      city: '',
-      search: ''
-    },
-    lhRouteCities: [],
-    lhRouteViewMode: 'grid',
-    lhRouteSelectionTouched: false,
     issues: []
   };
 
@@ -137,26 +125,6 @@
     driverTable: document.getElementById('driverTable'),
     searchInput: document.getElementById('searchInput'),
     searchResults: document.getElementById('searchResults'),
-    lhFileInput: document.getElementById('lhFileInput'),
-    lhStats: document.getElementById('lhStats'),
-    lhStatusBars: document.getElementById('lhStatusBars'),
-    lhCityRadar: document.getElementById('lhCityRadar'),
-    lhBairroRadar: document.getElementById('lhBairroRadar'),
-    lhStatusFilter: document.getElementById('lhStatusFilter'),
-    lhCityFilter: document.getElementById('lhCityFilter'),
-    lhSearch: document.getElementById('lhSearch'),
-    lhExportBtn: document.getElementById('lhExportBtn'),
-    lhClearBtn: document.getElementById('lhClearBtn'),
-    lhTable: document.getElementById('lhTable'),
-    lhRouteDefaultBtn: document.getElementById('lhRouteDefaultBtn'),
-    lhRouteAllBtn: document.getElementById('lhRouteAllBtn'),
-    lhRouteClearBtn: document.getElementById('lhRouteClearBtn'),
-    lhRouteCityChecklist: document.getElementById('lhRouteCityChecklist'),
-    lhRouteSummary: document.getElementById('lhRouteSummary'),
-    lhRouteBairroTable: document.getElementById('lhRouteBairroTable'),
-    lhRouteSelectedCities: document.getElementById('lhRouteSelectedCities'),
-    lhRouteCityTable: document.getElementById('lhRouteCityTable'),
-    copyLhRouteBtn: document.getElementById('copyLhRouteBtn'),
     modal: document.getElementById('detailModal'),
     modalTitle: document.getElementById('modalTitle'),
     modalSubtitle: document.getElementById('modalSubtitle'),
@@ -190,15 +158,12 @@
     toolsMenu: document.getElementById('toolsMenu'),
     monitorToggle: document.getElementById('monitorToggle'),
     monitorMenu: document.getElementById('monitorMenu'),
-    lhToggle: document.getElementById('lhToggle'),
-    lhMenu: document.getElementById('lhMenu'),
     cloudStatus: document.getElementById('cloudStatus'),
     loadCloudBtn: document.getElementById('loadCloudBtn'),
     saveCloudBtn: document.getElementById('saveCloudBtn')
   };
 
-  const HISTORY_KEY = 'txf-plus-import-history-v1';
-  const LH_STORAGE_KEY = 'txf-plus-lh-control-v1';
+  const HISTORY_KEY = 'txf-plus-import-history-v1';
   const HISTORY_LIMIT = 120;
 
   const columnHints = {
@@ -338,167 +303,6 @@
 
   function persistHistory() {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, HISTORY_LIMIT)));
-  }
-
-  function lhCompactColumns() {
-    return {
-      tracking: 'tracking',
-      status: 'status',
-      cep: 'cep',
-      city: 'city',
-      bairro: 'bairro',
-      driverId: 'driverId',
-      driver: 'driver'
-    };
-  }
-
-  function compactLhRows(rows = state.lhRows) {
-    return rows.map(row => ({
-      tracking: lhValue(row, 'tracking'),
-      status: lhStatusOf(row),
-      cep: lhCepOf(row),
-      city: lhValue(row, 'city'),
-      bairro: lhValue(row, 'bairro'),
-      driverId: lhValue(row, 'driverId'),
-      driver: lhValue(row, 'driver'),
-      __file: row.__file || '',
-      __sheet: row.__sheet || ''
-    }));
-  }
-
-  function persistLhControl() {
-    try {
-      localStorage.setItem(LH_STORAGE_KEY, JSON.stringify({
-        savedAt: new Date().toISOString(),
-        rows: compactLhRows(),
-        columns: lhCompactColumns(),
-        files: state.lhFiles
-      }));
-      return true;
-    } catch (error) {
-      console.warn('persistLhControl', error);
-      localStorage.removeItem(LH_STORAGE_KEY);
-      setCloudStatus('Nuvem LH: triagem grande demais para o navegador. Salvando e carregando pela nuvem.', 'warn');
-      return false;
-    }
-  }
-
-  function loadLhControl() {
-    try {
-      const payload = JSON.parse(localStorage.getItem(LH_STORAGE_KEY) || 'null');
-      if (!payload || !Array.isArray(payload.rows)) return;
-      state.lhRows = payload.rows;
-      state.lhColumns = payload.columns || detectColumns(payload.rows);
-      state.lhFiles = Array.isArray(payload.files) ? payload.files : ['triagem LH salva'];
-      state.lhFilter = { status: 'all', city: '', search: '' };
-      state.lhRouteCities = [];
-      state.lhRouteSelectionTouched = false;
-    } catch (error) {
-      console.warn('loadLhControl', error);
-      localStorage.removeItem(LH_STORAGE_KEY);
-    }
-  }
-
-  function lhCloudPayload() {
-    return {
-      version: 1,
-      savedAt: new Date().toISOString(),
-      files: state.lhFiles.slice(),
-      rows: compactLhRows(),
-      columns: lhCompactColumns()
-    };
-  }
-
-  function applyLhCloudPayload(payload) {
-    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
-    state.lhRows = rows;
-    state.lhColumns = payload?.columns || detectColumns(rows);
-    state.lhFiles = Array.isArray(payload?.files) ? payload.files : [];
-    state.lhFilter = { status: 'all', city: '', search: '' };
-    state.lhRouteCities = [];
-    state.lhRouteSelectionTouched = false;
-    if (!rows.length) localStorage.removeItem(LH_STORAGE_KEY);
-    renderLhControl();
-  }
-
-  async function saveLhCloudState(options = {}) {
-    if (!state.lhRows.length && !options.allowEmpty) {
-      if (!options.silent) setCloudStatus('Nuvem LH: importe a triagem antes de salvar.', 'warn');
-      return false;
-    }
-    const payload = lhCloudPayload();
-    if (!options.silent) setCloudStatus('Nuvem LH: salvando triagem...', 'warn');
-    try {
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 45000);
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?on_conflict=id`, {
-        method: 'POST',
-        headers: cloudHeaders({ Prefer: 'resolution=merge-duplicates,return=representation' }),
-        body: JSON.stringify({ id: CLOUD_LH_ID, payload, updated_at: payload.savedAt }),
-        signal: controller.signal
-      });
-      window.clearTimeout(timeoutId);
-      if (!response.ok) throw new Error(await response.text());
-      if (!options.silent) setCloudStatus(`Nuvem LH: triagem salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
-      return true;
-    } catch (error) {
-      const message = clean(error?.message);
-      const permissionIssue = message.includes('row-level security') || message.includes('violates') || message.includes('permission');
-      const timeoutIssue = error?.name === 'AbortError';
-      if (!options.silent) {
-        setCloudStatus(
-          permissionIssue
-            ? 'Nuvem LH: precisa atualizar o SQL do Supabase para liberar a Triagem LH.'
-            : timeoutIssue
-              ? 'Nuvem LH: envio demorou demais. Reimporte depois de atualizar o app.'
-              : 'Nuvem LH: não foi possível salvar a triagem.',
-          'error'
-        );
-      }
-      console.warn('saveLhCloudState', error);
-      return false;
-    }
-  }
-
-  async function loadLhCloudState(options = {}) {
-    if (!options.silent) setCloudStatus('Nuvem LH: carregando triagem...', 'warn');
-    try {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?id=eq.${encodeURIComponent(CLOUD_LH_ID)}&select=payload,updated_at`, {
-        headers: cloudHeaders()
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const data = await response.json();
-      if (!data.length) {
-        if (!options.silent) setCloudStatus('Nuvem LH: nenhuma triagem salva ainda.', 'warn');
-        return false;
-      }
-      applyLhCloudPayload(data[0].payload);
-      const savedAt = data[0].updated_at || data[0].payload?.savedAt;
-      if (!options.silent) setCloudStatus(`Nuvem LH: triagem carregada de ${new Date(savedAt).toLocaleString('pt-BR')}.`, 'ok');
-      return true;
-    } catch (error) {
-      if (!options.silent) setCloudStatus('Nuvem LH: não foi possível carregar a triagem.', 'error');
-      console.warn('loadLhCloudState', error);
-      return false;
-    }
-  }
-
-  function clearLhControl() {
-    state.lhRows = [];
-    state.lhColumns = {};
-    state.lhFiles = [];
-    state.lhFilter = { status: 'all', city: '', search: '' };
-    state.lhRouteCities = [];
-    state.lhRouteSelectionTouched = false;
-    localStorage.removeItem(LH_STORAGE_KEY);
-    if (els.lhFileInput) els.lhFileInput.value = '';
-    if (isLhModal()) {
-      state.currentRows = [];
-      if (els.modal?.open) els.modal.close();
-    }
-    renderLhControl();
-    if (document.querySelector('.view.active')?.id === 'lh-route') setView('lh');
-    saveLhCloudState({ allowEmpty: true, silent: true });
   }
 
   function previousSnapshot() {
@@ -1017,7 +821,7 @@
     const missingColumns = requiredColumns.filter(type => !state.columns[type]);
     missingColumns.forEach(type => {
       issues.push({
-        type: 'Coluna obrigatéria',
+        type: 'Coluna obrigatória',
         title: `${columnLabels[type]} não mapeada`,
         detail: 'Corrija na tela Colunas antes de analisar a operação.',
         filter: null
@@ -2443,11 +2247,10 @@
     renderQuality();
     renderTables(stats);
     renderDamageView();
-    renderRouteCalculator();
-    renderLhControl();
+    renderRouteCalculator();
     renderSearch();
     const activeView = document.querySelector('.view.active')?.id;
-    els.emptyState.classList.toggle('hidden', stats.total > 0 || ['lh', 'lh-route'].includes(activeView));
+    els.emptyState.classList.toggle('hidden', stats.total > 0);
     els.lastUpdate.textContent = stats.total ? new Date().toLocaleString('pt-BR') : 'Aguardando importação';
     repairVisibleText();
     refreshIcons();
@@ -2489,106 +2292,6 @@
     await saveCloudState();
   }
 
-  async function handleLhFiles(files) {
-    if (!files || !files.length) return;
-    if (typeof XLSX === 'undefined') {
-      alert('A biblioteca XLSX não carregou. Abra com internet ativa para importar a triagem.');
-      return;
-    }
-    const allRows = [];
-    for (const file of files) {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
-      workbook.SheetNames.forEach(sheetName => {
-        const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
-        json.forEach(row => allRows.push({ ...row, __file: file.name, __sheet: sheetName }));
-      });
-    }
-    state.lhRows = allRows;
-    state.lhColumns = detectColumns(allRows);
-    state.lhRows = compactLhRows(allRows);
-    state.lhColumns = lhCompactColumns();
-    state.lhFiles = Array.from(files).map(file => file.name);
-    state.lhFilter = { status: 'all', city: '', search: '' };
-    state.lhRouteCities = [];
-    state.lhRouteSelectionTouched = false;
-    persistLhControl();
-    renderLhControl();
-    setView('lh');
-    await saveLhCloudState();
-  }
-
-  function exportLhControl() {
-    const rows = lhVisibleRows();
-    const header = ['Status', 'BR', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver', 'Arquivo'];
-    const body = rows.map(row => [
-      lhStatusOf(row),
-      lhValue(row, 'tracking'),
-      lhCepOf(row),
-      lhValue(row, 'city'),
-      lhValue(row, 'bairro'),
-      lhValue(row, 'driverId'),
-      lhValue(row, 'driver'),
-      row.__file || ''
-    ]);
-    downloadCsv([header, ...body], 'controle-lh.csv');
-  }
-
-  function lhRowsByRouteFilter(filter) {
-    return lhRelevantRows().filter(row => {
-      if (filter.city && lhValue(row, 'city') !== filter.city) return false;
-      if (filter.bairro && lhValue(row, 'bairro') !== filter.bairro) return false;
-      if (filter.status === 'SOC_LHTransported' && lhStatusOf(row) !== 'SOC_LHTransported') return false;
-      if (filter.status === 'Hub_Received' && !isReceived(lhStatusOf(row))) return false;
-      return true;
-    });
-  }
-
-  function openLhDetails(filter, title) {
-    state.currentFilter = { kind: 'lh', ...filter };
-    state.currentRows = lhRowsByRouteFilter(filter);
-    els.modalTitle.textContent = title || 'Detalhes LH';
-    els.modalSubtitle.textContent = `${number(state.currentRows.length)} pacotes da triagem LH`;
-    els.modalSearch.value = '';
-    renderModalRows();
-    els.modal.showModal();
-    refreshIcons();
-  }
-
-  function copyLhRows(rows) {
-    const header = ['BR', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver', 'Arquivo'];
-    const body = rows.map(row => [
-      lhValue(row, 'tracking'),
-      lhStatusOf(row),
-      lhCepOf(row),
-      lhValue(row, 'city'),
-      lhValue(row, 'bairro'),
-      lhValue(row, 'driverId'),
-      lhValue(row, 'driver'),
-      row.__file || ''
-    ]);
-    navigator.clipboard?.writeText([header, ...body].map(line => line.join('\t')).join('\n'));
-  }
-
-  function copyLhRouteSummary() {
-    const selectedSet = new Set(state.lhRouteCities || []);
-    const city = state.lhRouteCities.length ? state.lhRouteCities.join(', ') : 'Sem cidade selecionada';
-    const rows = lhRelevantRows().filter(row => selectedSet.has(lhValue(row, 'city')));
-    const stats = lhRouteStatsFor(rows);
-    const bairros = lhBairroRouteGroups(rows).slice(0, 20);
-    const text = [
-      `ROTA LH - ${city}`,
-      `Total: ${number(stats.total)}`,
-      '',
-      'Cidades selecionadas:',
-      ...(state.lhRouteCities.length ? state.lhRouteCities.map(item => `- ${item}`) : ['- Nenhuma cidade selecionada']),
-      '',
-      'Cidade/Bairro:',
-      ...(bairros.length ? bairros.map(group => `- ${group.city} / ${group.bairro}: ${number(group.stats.total)} pacotes`) : ['- Nenhum bairro carregado'])
-    ].join('\n');
-    navigator.clipboard?.writeText(text);
-  }
-
   function openDetails(filter, title) {
     state.currentFilter = filter;
     state.currentRows = filteredRows(filter);
@@ -2603,22 +2306,7 @@
   function renderModalRows() {
     renderModalHeader();
     const query = low(els.modalSearch.value);
-    const rows = state.currentRows.filter(row => !query || low(isLhModal() ? lhSearchText(row) : rowSearchText(row)).includes(query)).slice(0, 1500);
-    if (isLhModal()) {
-      els.modalRows.innerHTML = rows.map(row => `
-        <tr>
-          <td>${html(lhValue(row, 'tracking'))}</td>
-          <td>${statusPill(lhStatusOf(row))}</td>
-          <td>${html(lhCepOf(row))}</td>
-          <td>${html(lhValue(row, 'city'))}</td>
-          <td>${html(lhValue(row, 'bairro'))}</td>
-          <td>${html(lhValue(row, 'driverId'))}</td>
-          <td>${html(lhValue(row, 'driver'))}</td>
-          <td>${html(row.__file || '')}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="8">Nada encontrado.</td></tr>';
-      return;
-    }
+    const rows = state.currentRows.filter(row => !query || low(rowSearchText(row)).includes(query)).slice(0, 1500);
     const actionable = isReceivedActionModal();
     els.modalRows.innerHTML = rows.map(row => actionable ? renderReceivedActionRow(row) : `
       <tr>
@@ -2634,16 +2322,8 @@
   }
 
   function renderModalHeader() {
-    if (isLhModal()) {
-      els.modalHeader.innerHTML = '<th>BR</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th><th>Arquivo</th>';
-      return;
-    }
     const lastColumn = isReceivedActionModal() ? 'Tratativa' : 'Arquivo';
     els.modalHeader.innerHTML = `<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th><th>${lastColumn}</th>`;
-  }
-
-  function isLhModal() {
-    return state.currentFilter?.kind === 'lh';
   }
 
   function isReceivedActionModal() {
@@ -2719,288 +2399,6 @@
       row.__txfTratativa || '',
       row.__txfStatusAction || ''
     ].join(' ');
-  }
-
-  function lhRaw(row, type) {
-    const key = state.lhColumns[type];
-    return clean((key ? row[key] : '') || row[type] || '');
-  }
-
-  function lhCepOf(row) {
-    const digits = clean(lhRaw(row, 'cep')).replace(/\D/g, '');
-    return digits ? digits.padStart(8, '0').slice(-8) : '';
-  }
-
-  function lhValue(row, type) {
-    if (type === 'city' || type === 'bairro') {
-      const mapped = cepMap[lhCepOf(row)] || {};
-      const fallback = type === 'city' ? 'Sem cidade' : 'Sem bairro';
-      return lhRaw(row, type) || mapped[type === 'city' ? 'cidade' : 'bairro'] || fallback;
-    }
-    if (type === 'driver') return lhRaw(row, 'driver') || 'Sem driver';
-    if (type === 'driverId') return lhRaw(row, 'driverId') || 'Sem ID';
-    const fallbacks = { tracking: 'Sem tracking', status: '(vazio)', cep: 'Sem CEP' };
-    return lhRaw(row, type) || fallbacks[type] || '';
-  }
-
-  function lhStatusOf(row) {
-    return normalizeStatus(lhValue(row, 'status') || row.__sheet || row.__file);
-  }
-
-  function isLhControlStatus(status) {
-    return status === 'SOC_LHTransported' || isReceived(status);
-  }
-
-  function lhRelevantRows() {
-    return state.lhRows.filter(row => isLhControlStatus(lhStatusOf(row)));
-  }
-
-  function lhSearchText(row) {
-    return [
-      lhValue(row, 'tracking'),
-      lhStatusOf(row),
-      lhCepOf(row),
-      lhValue(row, 'city'),
-      lhValue(row, 'bairro'),
-      lhValue(row, 'driverId'),
-      lhValue(row, 'driver'),
-      row.__file,
-      row.__sheet
-    ].join(' ');
-  }
-
-  function lhVisibleRows() {
-    const query = low(state.lhFilter.search);
-    const baseRows = state.lhFilter.status === 'other' ? state.lhRows : lhRelevantRows();
-    return baseRows.filter(row => {
-      const status = lhStatusOf(row);
-      if (state.lhFilter.status === 'SOC_LHTransported' && status !== 'SOC_LHTransported') return false;
-      if (state.lhFilter.status === 'Hub_Received' && !isReceived(status)) return false;
-      if (state.lhFilter.status === 'other' && isLhControlStatus(status)) return false;
-      if (state.lhFilter.city && lhValue(row, 'city') !== state.lhFilter.city) return false;
-      if (query && !low(lhSearchText(row)).includes(query)) return false;
-      return true;
-    });
-  }
-
-  function lhGroupRows(rows, keyFn) {
-    const groups = new Map();
-    rows.forEach(row => {
-      const key = keyFn(row);
-      groups.set(key, (groups.get(key) || 0) + 1);
-    });
-    return Array.from(groups.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'));
-  }
-
-  function lhRouteStatsFor(rows) {
-    return rows.reduce((acc, row) => {
-      const status = lhStatusOf(row);
-      acc.total += 1;
-      if (status === 'SOC_LHTransported') acc.socLH += 1;
-      if (isReceived(status)) acc.received += 1;
-      return acc;
-    }, { total: 0, socLH: 0, received: 0 });
-  }
-
-  function groupedLhRouteStats(rows, keyFn) {
-    const groups = new Map();
-    rows.forEach(row => {
-      const key = keyFn(row);
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(row);
-    });
-    return Array.from(groups.entries())
-      .map(([name, groupRows]) => ({ name, stats: lhRouteStatsFor(groupRows) }))
-      .sort((a, b) => b.stats.total - a.stats.total || a.name.localeCompare(b.name, 'pt-BR'));
-  }
-
-  function selectedLhRouteCities(cityGroups) {
-    const available = new Set(cityGroups.map(group => group.name));
-    let selected = (state.lhRouteCities || []).filter(city => available.has(city));
-    if (!selected.length && !state.lhRouteSelectionTouched) selected = routeCityDefaults(cityGroups);
-    state.lhRouteCities = selected;
-    return selected;
-  }
-
-  function setLhRouteCities(cities, touched = true) {
-    state.lhRouteCities = Array.from(new Set(cities.filter(Boolean)));
-    state.lhRouteSelectionTouched = touched;
-    renderLhControl();
-  }
-
-  function lhBairroRouteGroups(rows) {
-    const groups = new Map();
-    rows.forEach(row => {
-      const city = lhValue(row, 'city');
-      const bairro = lhValue(row, 'bairro');
-      const key = groupKey([city, bairro]);
-      if (!groups.has(key)) groups.set(key, { city, bairro, rows: [] });
-      groups.get(key).rows.push(row);
-    });
-    return Array.from(groups.values())
-      .map(group => ({ ...group, stats: lhRouteStatsFor(group.rows) }))
-      .sort((a, b) => b.stats.total - a.stats.total || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'));
-  }
-
-  function lhStatusData(rows) {
-    return {
-      total: rows.length,
-      soc: rows.filter(row => lhStatusOf(row) === 'SOC_LHTransported').length,
-      received: rows.filter(row => isReceived(lhStatusOf(row))).length,
-      other: rows.filter(row => !isLhControlStatus(lhStatusOf(row))).length
-    };
-  }
-
-  function renderLhControl() {
-    if (!els.lhTable) return;
-    const allRows = state.lhRows;
-    const relevant = lhRelevantRows();
-    const visible = lhVisibleRows();
-    const { total, soc, received, other } = lhStatusData(allRows);
-    const cities = lhGroupRows(allRows, row => lhValue(row, 'city'));
-    const bairroBaseRows = state.lhFilter.city ? allRows.filter(row => lhValue(row, 'city') === state.lhFilter.city) : allRows;
-    const bairros = lhGroupRows(bairroBaseRows, row => `${lhValue(row, 'city')} / ${lhValue(row, 'bairro')}`);
-    if (state.lhFilter.city && !cities.some(([city]) => city === state.lhFilter.city)) state.lhFilter.city = '';
-    els.lhStatusFilter.value = state.lhFilter.status || 'all';
-    fillSelect(els.lhCityFilter, [['', 'Todas']], cities.map(([city]) => [city, city]), state.lhFilter.city);
-    els.lhSearch.value = state.lhFilter.search || '';
-    els.lhStats.innerHTML = [
-      ['Total LH', total, `${number(state.lhFiles.length)} ${plural(state.lhFiles.length, 'arquivo', 'arquivos')} importado${state.lhFiles.length === 1 ? '' : 's'}`, 'total'],
-      ['SOC LH', soc, `${percent(soc, total)} da triagem`, 'soc'],
-      ['Hub Received', received, `${percent(received, total)} da triagem`, 'received'],
-      ['Outros status', other, other ? 'Verificar status fora do padrão' : 'Nenhum status diferente', other ? 'alert' : 'ok']
-    ].map(([label, qty, note, tone]) => `
-      <button class="lh-kpi lh-kpi-${tone}" type="button" data-lh-kpi="${html(tone)}">
-        <b>${number(qty)}</b>
-        <small>${html(label)}</small>
-        <em>${html(note)}</em>
-      </button>
-    `).join('');
-
-    renderLhStatusBars(allRows, soc, received, other);
-    renderLhRadar(els.lhCityRadar, cities, total, 'Nenhuma cidade carregada.', 'city');
-    renderLhRadar(els.lhBairroRadar, bairros, bairroBaseRows.length, 'Nenhum bairro carregado.');
-    renderLhRouteCalculator(relevant);
-
-    els.lhTable.innerHTML = visible.map(row => `
-      <tr>
-        <td>${statusPill(lhStatusOf(row))}</td>
-        <td>${html(lhValue(row, 'tracking'))}</td>
-        <td>${html(lhCepOf(row))}</td>
-        <td>${html(lhValue(row, 'city'))}</td>
-        <td>${html(lhValue(row, 'bairro'))}</td>
-        <td>${html(lhValue(row, 'driver'))}</td>
-        <td>${html(row.__file || '')}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="7">Importe a planilha da triagem ou ajuste a busca.</td></tr>';
-  }
-
-  function renderLhRouteCalculator(rows) {
-    const cityGroups = groupedLhRouteStats(rows, row => lhValue(row, 'city'));
-    const selectedCities = selectedLhRouteCities(cityGroups);
-    const selectedSet = new Set(selectedCities);
-
-    els.lhRouteCityChecklist.innerHTML = cityGroups.length ? cityGroups.map(group => {
-      const checked = selectedSet.has(group.name) ? 'checked' : '';
-      return `
-        <label class="route-city-option">
-          <input type="checkbox" data-lh-route-city-check value="${html(group.name)}" ${checked}>
-          <span>${html(group.name)}</span>
-          <b>${number(group.stats.total)}</b>
-        </label>
-      `;
-    }).join('') : '<p class="muted">Importe a triagem LH para listar as cidades.</p>';
-
-    const selectedRows = rows.filter(row => selectedSet.has(lhValue(row, 'city')));
-    const selectedStats = lhRouteStatsFor(selectedRows);
-    const selectedBairros = lhBairroRouteGroups(selectedRows);
-    const cards = [
-      [selectedCities.length === 1 ? 'Total da cidade' : 'Total das cidades', selectedStats.total, 'Base CONTROLE LH'],
-      ['Bairros', selectedBairros.length, 'Bairros da rota selecionada']
-    ];
-    els.lhRouteSummary.innerHTML = selectedStats.total ? cards.map(([label, qty, note], index) => `
-      <article class="route-card route-card-${index + 1}">
-        <span>${html(label)}</span>
-        <strong>${number(qty)}</strong>
-        <small>${html(note)}</small>
-      </article>
-    `).join('') : `
-      <div class="empty-route">
-        <strong>Nenhuma rota LH selecionada.</strong>
-        <span>Importe a triagem e escolha uma ou mais cidades.</span>
-      </div>
-    `;
-
-    els.lhRouteBairroTable.innerHTML = selectedBairros.length ? selectedBairros.map(group => `
-      <tr>
-        <td>${html(group.city)} / ${html(group.bairro)}</td>
-        <td>${number(group.stats.total)}</td>
-        <td><button class="mini-button" data-lh-open='${html(JSON.stringify({ city: group.city, bairro: group.bairro }))}'>Abrir</button></td>
-      </tr>
-    `).join('') : '<tr><td colspan="3">Escolha uma ou mais cidades da triagem LH.</td></tr>';
-
-    const selectedCityGroups = cityGroups.filter(group => selectedSet.has(group.name));
-    els.lhRouteSelectedCities.innerHTML = selectedCityGroups.length ? `
-      <div class="route-selected-head">
-        <div>
-          <strong>Cidades selecionadas</strong>
-          <span>${number(selectedStats.total)} ${plural(selectedStats.total, 'pacote', 'pacotes')} no total</span>
-        </div>
-        <div class="route-view-toggle" aria-label="Modo de visualização">
-          <button class="mini-button ${state.lhRouteViewMode === 'grid' ? 'active' : ''}" type="button" data-lh-route-view="grid">Lado a lado</button>
-          <button class="mini-button ${state.lhRouteViewMode === 'list' ? 'active' : ''}" type="button" data-lh-route-view="list">Um abaixo do outro</button>
-        </div>
-      </div>
-      <div class="route-selected-list ${state.lhRouteViewMode === 'list' ? 'stacked' : ''}">
-        ${selectedCityGroups.map(group => `
-          <button class="route-selected-city" type="button" data-lh-route-city="${html(group.name)}" title="Remover ${html(group.name)} da rota LH">
-            <span>${html(group.name)}</span>
-            <strong>${number(group.stats.total)}</strong>
-            <small>${number(group.stats.total)} pacotes</small>
-          </button>
-        `).join('')}
-      </div>
-    ` : '<div class="route-selected-empty">Nenhuma cidade selecionada.</div>';
-
-    els.lhRouteCityTable.innerHTML = cityGroups.length ? cityGroups.map(group => {
-      const selected = selectedSet.has(group.name);
-      return `
-        <tr>
-          <td>${html(group.name)}</td>
-          <td>${number(group.stats.total)}</td>
-          <td><button class="mini-button" data-lh-route-city="${html(group.name)}">${selected ? 'Remover' : 'Adicionar'}</button></td>
-        </tr>
-      `;
-    }).join('') : '<tr><td colspan="3">Nenhuma cidade LH carregada.</td></tr>';
-  }
-
-  function renderLhStatusBars(rows, soc, received, other = 0) {
-    const total = rows.length || 1;
-    const items = [
-      ['SOC LH', soc, 'SOC_LHTransported'],
-      ['Hub Received', received, 'Hub_Received'],
-      ['Outros status', other, 'other']
-    ];
-    els.lhStatusBars.innerHTML = items.map(([label, qty, filter]) => {
-      const width = Math.max((qty / total) * 100, qty ? 6 : 0);
-      const tone = filter === 'other' && qty ? ' warning' : '';
-      return `<button class="lh-status-line${tone}" type="button" data-lh-status="${html(filter)}">
-        <span><strong>${html(label)}</strong><b>${number(qty)}</b></span>
-        <i><em style="width:${width}%"></em></i>
-      </button>`;
-    }).join('') || '<p class="muted">Importe a triagem para gerar o resumo.</p>';
-  }
-
-  function renderLhRadar(container, groups, total, emptyText, mode = '') {
-    container.innerHTML = groups.slice(0, 10).map(([label, qty]) => {
-      const tag = mode === 'city' ? 'button' : 'div';
-      const data = mode === 'city' ? ` data-lh-city="${html(label)}" type="button"` : '';
-      return `<${tag} class="lh-radar-line"${data}>
-        <strong>${html(label)}</strong>
-        <b>${number(qty)}</b>
-        <small>${percent(qty, total)}</small>
-      </${tag}>`;
-    }).join('') || `<p class="muted">${html(emptyText)}</p>`;
   }
 
   function renderSearch() {
@@ -3129,8 +2527,7 @@
       if (button.dataset.view) button.addEventListener('click', () => setView(button.dataset.view));
     });
     els.monitorToggle.addEventListener('click', () => toggleMonitoring());
-    els.toolsToggle.addEventListener('click', () => toggleTools());
-    els.lhToggle.addEventListener('click', () => toggleLhMenu());
+    els.toolsToggle.addEventListener('click', () => toggleTools());
 
     document.body.addEventListener('click', event => {
       const filterButton = event.target.closest('[data-filter]');
@@ -3169,7 +2566,7 @@
         const region = regionButton.dataset.region;
         state.currentFilter = { kind: 'notDelivered', region };
         state.currentRows = rowsByRegion(region);
-        els.modalTitle.textContent = `Regi?o: ${region}`;
+        els.modalTitle.textContent = `Região: ${region}`;
         els.modalSubtitle.textContent = `${number(state.currentRows.length)} pendentes encontrados`;
         els.modalSearch.value = '';
         renderModalRows();
@@ -3198,51 +2595,6 @@
 
       const viewJump = event.target.closest('[data-view-jump]');
       if (viewJump) setView(viewJump.dataset.viewJump);
-
-      const lhStatusButton = event.target.closest('[data-lh-status]');
-      if (lhStatusButton) {
-        state.lhFilter.status = lhStatusButton.dataset.lhStatus;
-        renderLhControl();
-      }
-
-      const lhCityButton = event.target.closest('[data-lh-city]');
-      if (lhCityButton) {
-        state.lhFilter.city = lhCityButton.dataset.lhCity;
-        renderLhControl();
-      }
-
-      const lhKpiButton = event.target.closest('[data-lh-kpi]');
-      if (lhKpiButton) {
-        const type = lhKpiButton.dataset.lhKpi;
-        if (type === 'soc') state.lhFilter.status = 'SOC_LHTransported';
-        else if (type === 'received') state.lhFilter.status = 'Hub_Received';
-        else if (type === 'alert') state.lhFilter.status = 'other';
-        else state.lhFilter.status = 'all';
-        renderLhControl();
-      }
-
-      const lhRouteCityButton = event.target.closest('[data-lh-route-city]');
-      if (lhRouteCityButton) {
-        const city = lhRouteCityButton.dataset.lhRouteCity;
-        const selected = new Set(state.lhRouteCities || []);
-        if (selected.has(city)) selected.delete(city);
-        else selected.add(city);
-        setLhRouteCities(Array.from(selected));
-      }
-
-      const lhRouteViewButton = event.target.closest('[data-lh-route-view]');
-      if (lhRouteViewButton) {
-        state.lhRouteViewMode = lhRouteViewButton.dataset.lhRouteView === 'list' ? 'list' : 'grid';
-        renderLhControl();
-      }
-
-      const lhOpenButton = event.target.closest('[data-lh-open]');
-      if (lhOpenButton) {
-        const filter = JSON.parse(lhOpenButton.dataset.lhOpen);
-        const title = filter.bairro ? `LH: ${filter.city} / ${filter.bairro}` : `LH: ${filter.city || 'Todos'}`;
-        openLhDetails(filter, title);
-      }
-
       const sortHeader = event.target.closest('th');
       if (sortHeader) sortTableByHeader(sortHeader);
     });
@@ -3258,14 +2610,6 @@
         else selected.delete(routeCheck.value);
         setRouteCities(Array.from(selected));
       }
-
-      const lhRouteCheck = event.target.closest('[data-lh-route-city-check]');
-      if (lhRouteCheck) {
-        const selected = new Set(state.lhRouteCities || []);
-        if (lhRouteCheck.checked) selected.add(lhRouteCheck.value);
-        else selected.delete(lhRouteCheck.value);
-        setLhRouteCities(Array.from(selected));
-      }
     });
 
     document.body.addEventListener('input', event => {
@@ -3279,30 +2623,6 @@
     });
 
     els.fileInput.addEventListener('change', event => handleFiles(event.target.files));
-    els.lhFileInput.addEventListener('change', event => handleLhFiles(event.target.files));
-    els.lhStatusFilter.addEventListener('change', event => {
-      state.lhFilter.status = event.target.value;
-      renderLhControl();
-    });
-    els.lhCityFilter.addEventListener('change', event => {
-      state.lhFilter.city = event.target.value;
-      renderLhControl();
-    });
-    els.lhSearch.addEventListener('input', event => {
-      state.lhFilter.search = event.target.value;
-      renderLhControl();
-    });
-    els.lhExportBtn.addEventListener('click', exportLhControl);
-    els.lhClearBtn.addEventListener('click', clearLhControl);
-    els.lhRouteDefaultBtn.addEventListener('click', () => {
-      const cityGroups = groupedLhRouteStats(lhRelevantRows(), row => lhValue(row, 'city'));
-      setLhRouteCities(routeCityDefaults(cityGroups));
-    });
-    els.lhRouteAllBtn.addEventListener('click', () => {
-      const cityGroups = groupedLhRouteStats(lhRelevantRows(), row => lhValue(row, 'city'));
-      setLhRouteCities(cityGroups.map(group => group.name));
-    });
-    els.lhRouteClearBtn.addEventListener('click', () => setLhRouteCities([]));
     els.damageTracking.addEventListener('input', updateDamagePreview);
     els.damageForm.addEventListener('submit', event => {
       event.preventDefault();
@@ -3353,12 +2673,11 @@
     });
     els.searchInput.addEventListener('input', renderSearch);
     els.modalSearch.addEventListener('input', renderModalRows);
-    els.copyRowsBtn.addEventListener('click', () => isLhModal() ? copyLhRows(state.currentRows) : copyRows(state.currentRows));
+    els.copyRowsBtn.addEventListener('click', () => copyRows(state.currentRows));
     els.copySummaryBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar o resumo.'));
-    els.copyMissionBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar a miss?o.'));
+    els.copyMissionBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar a missão.'));
     els.copyMapBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.mapSummary || 'Importe os arquivos para gerar o mapa operacional.'));
-    els.copyRouteBtn.addEventListener('click', copyRouteSummary);
-    els.copyLhRouteBtn.addEventListener('click', copyLhRouteSummary);
+    els.copyRouteBtn.addEventListener('click', copyRouteSummary);
     els.copyManagerBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.managerText || 'Importe os arquivos para gerar o resumo gerencial.'));
     els.copyActionPlanBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.actionPlanText || 'Importe os arquivos para gerar o plano de ação.'));
     els.downloadPendingBtn.addEventListener('click', downloadPending);
@@ -3425,14 +2744,12 @@
 
   function setView(id) {
     document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === id));
-    document.querySelectorAll('.nav-button').forEach(button => button.classList.toggle('active', button.dataset.view === id));
-    els.lhToggle.classList.toggle('active', ['lh', 'lh-route'].includes(id));
+    document.querySelectorAll('.nav-button').forEach(button => button.classList.toggle('active', button.dataset.view === id));
     const active = document.querySelector(`.nav-button[data-view="${id}"] span`);
     document.getElementById('viewTitle').textContent = active ? active.textContent : 'Dashboard';
     setToolsOpen(['history', 'search'].includes(id));
     setMonitoringOpen(['received', 'assigned'].includes(id));
-    setLhMenuOpen(['lh', 'lh-route'].includes(id));
-    if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0 || ['lh', 'lh-route'].includes(id));
+    if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0);
     repairVisibleText();
   }
 
@@ -3444,11 +2761,6 @@
   function toggleMonitoring(force) {
     const shouldOpen = typeof force === 'boolean' ? force : !els.monitorMenu.classList.contains('open');
     setMonitoringOpen(shouldOpen);
-  }
-
-  function toggleLhMenu(force) {
-    const shouldOpen = typeof force === 'boolean' ? force : !els.lhMenu.classList.contains('open');
-    setLhMenuOpen(shouldOpen);
   }
 
   function setToolsOpen(open) {
@@ -3463,26 +2775,18 @@
     els.monitorToggle.setAttribute('aria-expanded', String(open));
   }
 
-  function setLhMenuOpen(open) {
-    els.lhMenu.classList.toggle('open', open);
-    els.lhToggle.classList.toggle('open', open);
-    els.lhToggle.setAttribute('aria-expanded', String(open));
-  }
-
   function refreshIcons() {
     if (window.lucide) window.lucide.createIcons();
   }
 
   function init() {
-    loadHistory();
-    loadLhControl();
+    loadHistory();
     els.cepCount.textContent = number(Object.keys(cepMap).length);
     bindEvents();
     renderAll();
     repairVisibleText();
     refreshIcons();
     loadCloudState({ silent: true });
-    loadLhCloudState({ silent: true });
   }
 
   init();

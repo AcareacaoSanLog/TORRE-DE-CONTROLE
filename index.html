@@ -31,13 +31,6 @@
         <button class="nav-button" data-view="columns"><i data-lucide="columns-3"></i><span>📋 Colunas</span><b id="columnBadge" class="hidden">0</b></button>
         <button class="nav-button" data-view="mission"><i data-lucide="target"></i><span>🎯 Missão do dia</span><b id="missionBadge">0</b></button>
         <button class="nav-button" data-view="route"><i data-lucide="route"></i><span>🧭 Calcular rota</span></button>
-        <button class="nav-button tool-toggle" type="button" id="lhToggle" aria-expanded="false">
-          <i data-lucide="list-checks"></i><span>CONTROLE LH</span><i data-lucide="chevron-down"></i>
-        </button>
-        <div class="tools-menu" id="lhMenu">
-          <button class="nav-button sub" data-view="lh"><i data-lucide="clipboard-list"></i><span>Triagem LH</span></button>
-          <button class="nav-button sub" data-view="lh-route"><i data-lucide="route"></i><span>Calcular rota LH</span></button>
-        </div>
         <button class="nav-button" data-view="quality"><i data-lucide="shield-alert"></i><span>🛡️ Qualidade</span><b id="qualityBadge">0</b></button>
         <button class="nav-button" data-view="manager"><i data-lucide="briefcase-business"></i><span>👤 Gestor</span></button>
         <button class="nav-button" data-view="damage"><i data-lucide="triangle-alert"></i><span>⚠️ Avarias</span></button>
@@ -459,123 +452,6 @@
         </section>
       </section>
 
-      <section class="view" id="lh">
-        <section class="panel">
-          <div class="panel-head">
-            <h3>Triagem LH</h3>
-            <div class="lh-head-actions">
-              <label class="mini-button lh-import-button">
-                Importar triagem
-                <input id="lhFileInput" type="file" multiple accept=".csv,.xlsx,.xls">
-              </label>
-              <button class="mini-button" id="lhExportBtn" type="button">Exportar CONTROLE LH</button>
-              <button class="mini-button danger" id="lhClearBtn" type="button">Limpar CONTROLE LH</button>
-            </div>
-          </div>
-          <div class="lh-toolbar">
-            <div class="lh-stats" id="lhStats"></div>
-            <div class="lh-controls">
-              <label>
-                <span>Status</span>
-                <select id="lhStatusFilter">
-                  <option value="all">SOC LH + Received</option>
-                  <option value="SOC_LHTransported">Somente SOC LH</option>
-                  <option value="Hub_Received">Somente Hub Received</option>
-                  <option value="other">Outros status</option>
-                </select>
-              </label>
-              <label>
-                <span>Cidade</span>
-                <select id="lhCityFilter"></select>
-              </label>
-              <label>
-                <span>Buscar BR</span>
-                <input id="lhSearch" type="search" placeholder="Digite a BR ou tracking">
-              </label>
-            </div>
-            <div class="lh-dashboard">
-              <section class="lh-panel">
-                <div class="panel-head"><h3>Resumo LH</h3></div>
-                <div class="lh-status-bars" id="lhStatusBars"></div>
-              </section>
-              <section class="lh-panel">
-                <div class="panel-head"><h3>Radar de cidades</h3></div>
-                <div class="lh-radar" id="lhCityRadar"></div>
-              </section>
-              <section class="lh-panel">
-                <div class="panel-head"><h3>Radar de bairros</h3></div>
-                <div class="lh-radar" id="lhBairroRadar"></div>
-              </section>
-            </div>
-          </div>
-          <div class="table-wrap tall">
-            <table>
-              <thead><tr><th>Status</th><th>BR</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver</th><th>Arquivo</th></tr></thead>
-              <tbody id="lhTable"></tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-
-      <section class="view" id="lh-route">
-        <section class="panel">
-          <div class="panel-head">
-            <h3>Calcular rota LH</h3>
-            <button class="text-button" type="button" data-view-jump="lh">Voltar ao CONTROLE LH</button>
-          </div>
-          <div class="lh-route-block">
-            <div class="route-grid">
-              <section class="panel">
-                <div class="panel-head">
-                  <h3>Selecionar cidades LH</h3>
-                  <button class="text-button" id="copyLhRouteBtn">Copiar rota LH</button>
-                </div>
-                <div class="route-picker">
-                  <div class="route-picker-head">
-                    <span>Cidades da triagem</span>
-                    <div class="route-picker-actions">
-                      <button class="mini-button" type="button" id="lhRouteDefaultBtn">Rota fixa</button>
-                      <button class="mini-button" type="button" id="lhRouteAllBtn">Todas</button>
-                      <button class="mini-button" type="button" id="lhRouteClearBtn">Limpar</button>
-                    </div>
-                  </div>
-                  <div id="lhRouteCityChecklist" class="route-city-checklist"></div>
-                </div>
-                <div id="lhRouteSummary" class="route-summary"></div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-head">
-                  <h3>Bairros da rota LH</h3>
-                </div>
-                <div class="table-wrap">
-                  <table>
-                    <thead>
-                      <tr><th>Cidade/Bairro</th><th>Total de pacotes</th><th></th></tr>
-                    </thead>
-                    <tbody id="lhRouteBairroTable"></tbody>
-                  </table>
-                </div>
-                <div class="route-selected-cities" id="lhRouteSelectedCities"></div>
-              </section>
-            </div>
-
-            <section class="panel preview-panel">
-              <div class="panel-head">
-                <h3>Todas as cidades LH</h3>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr><th>Cidade</th><th>Total de pacotes</th><th></th></tr>
-                  </thead>
-                  <tbody id="lhRouteCityTable"></tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-        </section>
-      </section>
     </main>
   </div>
 
