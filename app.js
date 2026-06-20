@@ -340,18 +340,45 @@
     localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, HISTORY_LIMIT)));
   }
 
+  function lhCompactColumns() {
+    return {
+      tracking: 'tracking',
+      status: 'status',
+      cep: 'cep',
+      city: 'city',
+      bairro: 'bairro',
+      driverId: 'driverId',
+      driver: 'driver'
+    };
+  }
+
+  function compactLhRows(rows = state.lhRows) {
+    return rows.map(row => ({
+      tracking: lhValue(row, 'tracking'),
+      status: lhStatusOf(row),
+      cep: lhCepOf(row),
+      city: lhValue(row, 'city'),
+      bairro: lhValue(row, 'bairro'),
+      driverId: lhValue(row, 'driverId'),
+      driver: lhValue(row, 'driver'),
+      __file: row.__file || '',
+      __sheet: row.__sheet || ''
+    }));
+  }
+
   function persistLhControl() {
     try {
       localStorage.setItem(LH_STORAGE_KEY, JSON.stringify({
         savedAt: new Date().toISOString(),
-        rows: state.lhRows,
-        columns: state.lhColumns,
+        rows: compactLhRows(),
+        columns: lhCompactColumns(),
         files: state.lhFiles
       }));
       return true;
     } catch (error) {
       console.warn('persistLhControl', error);
-      alert('A triagem LH foi importada, mas nao coube no armazenamento do navegador. Se apertar F5, talvez precise importar novamente.');
+      localStorage.removeItem(LH_STORAGE_KEY);
+      setCloudStatus('Nuvem LH: triagem grande demais para o navegador. Salvando e carregando pela nuvem.', 'warn');
       return false;
     }
   }
@@ -377,8 +404,8 @@
       version: 1,
       savedAt: new Date().toISOString(),
       files: state.lhFiles.slice(),
-      rows: state.lhRows,
-      columns: state.lhColumns
+      rows: compactLhRows(),
+      columns: lhCompactColumns()
     };
   }
 
@@ -390,8 +417,7 @@
     state.lhFilter = { status: 'all', city: '', search: '' };
     state.lhRouteCities = [];
     state.lhRouteSelectionTouched = false;
-    if (rows.length) persistLhControl();
-    else localStorage.removeItem(LH_STORAGE_KEY);
+    if (!rows.length) localStorage.removeItem(LH_STORAGE_KEY);
     renderLhControl();
   }
 
@@ -403,16 +429,32 @@
     const payload = lhCloudPayload();
     if (!options.silent) setCloudStatus('Nuvem LH: salvando triagem...', 'warn');
     try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 45000);
       const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?on_conflict=id`, {
         method: 'POST',
         headers: cloudHeaders({ Prefer: 'resolution=merge-duplicates,return=representation' }),
-        body: JSON.stringify({ id: CLOUD_LH_ID, payload, updated_at: payload.savedAt })
+        body: JSON.stringify({ id: CLOUD_LH_ID, payload, updated_at: payload.savedAt }),
+        signal: controller.signal
       });
+      window.clearTimeout(timeoutId);
       if (!response.ok) throw new Error(await response.text());
       if (!options.silent) setCloudStatus(`Nuvem LH: triagem salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
       return true;
     } catch (error) {
-      if (!options.silent) setCloudStatus('Nuvem LH: nao foi possivel salvar a triagem.', 'error');
+      const message = clean(error?.message);
+      const permissionIssue = message.includes('row-level security') || message.includes('violates') || message.includes('permission');
+      const timeoutIssue = error?.name === 'AbortError';
+      if (!options.silent) {
+        setCloudStatus(
+          permissionIssue
+            ? 'Nuvem LH: precisa atualizar o SQL do Supabase para liberar a Triagem LH.'
+            : timeoutIssue
+              ? 'Nuvem LH: envio demorou demais. Reimporte depois de atualizar o app.'
+              : 'Nuvem LH: nao foi possivel salvar a triagem.',
+          'error'
+        );
+      }
       console.warn('saveLhCloudState', error);
       return false;
     }
@@ -2439,6 +2481,8 @@
     }
     state.lhRows = allRows;
     state.lhColumns = detectColumns(allRows);
+    state.lhRows = compactLhRows(allRows);
+    state.lhColumns = lhCompactColumns();
     state.lhFiles = Array.from(files).map(file => file.name);
     state.lhFilter = { status: 'all', city: '', search: '' };
     state.lhRouteCities = [];
