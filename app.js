@@ -201,9 +201,9 @@
 
   const regionRules = [
     { name: 'Teixeira urbano', cities: ['Teixeira de Freitas'] },
-    { name: 'Extremo sul norte', cities: ['Itamaraju', 'Jucurucu', 'Jucuru?u', 'Prado', 'Alcobaca', 'Alcoba?a'] },
-    { name: 'Costa e distritos', cities: ['Caravelas', 'Nova Vicosa', 'Nova Vi?osa', 'Posto da Mata', 'Mucuri'] },
-    { name: 'Interior oeste', cities: ['Medeiros Neto', 'Itanhem', 'Itanh?m', 'Vereda', 'Lajedao', 'Lajed?o', 'Ibirapua', 'Ibirapu?'] }
+    { name: 'Extremo sul norte', cities: ['Itamaraju', 'Jucurucu', 'Jucuruçu', 'Prado', 'Alcobaca', 'Alcobaça'] },
+    { name: 'Costa e distritos', cities: ['Caravelas', 'Nova Vicosa', 'Nova Viçosa', 'Posto da Mata', 'Mucuri'] },
+    { name: 'Interior oeste', cities: ['Medeiros Neto', 'Itanhem', 'Itanhém', 'Vereda', 'Lajedao', 'Lajedão', 'Ibirapua', 'Ibirapuã'] }
   ];
 
   const statusConfig = {
@@ -976,7 +976,7 @@
         issues.push({ type: 'Tracking vazio', title: tracking, detail: `Arquivo: ${row.__file || ''}`, filter: null });
       }
       if (trackingCounts.get(tracking) > 1) {
-        issues.push({ type: 'Tracking duplicado', title: tracking, detail: `${trackingCounts.get(tracking)} ocorr?ncias encontradas`, filter: { tracking } });
+        issues.push({ type: 'Tracking duplicado', title: tracking, detail: `${trackingCounts.get(tracking)} ocorrências encontradas`, filter: { tracking } });
       }
       if (!cep) {
         issues.push({ type: 'CEP vazio', title: tracking, detail: `${status} | ${driver}`, filter: { tracking } });
@@ -1472,7 +1472,7 @@
   }
 
   function severityLabel(severity) {
-    return { critical: 'Cr?tico', high: 'Alto', normal: 'Monitorar', good: 'OK' }[severity] || 'Info';
+    return { critical: 'Crítico', high: 'Alto', normal: 'Monitorar', good: 'OK' }[severity] || 'Info';
   }
 
   function detailTitle(kind) {
@@ -1547,7 +1547,7 @@
       return { label: 'Prioridade alta', className: 'high' };
     }
     if (region.score >= 25 || region.pending >= 30) {
-      return { label: 'Prioridade m?dia', className: 'medium' };
+      return { label: 'Prioridade média', className: 'medium' };
     }
     return { label: 'Prioridade baixa', className: 'low' };
   }
@@ -1575,7 +1575,7 @@
     if (stats.hold > 0) {
       items.push({
         title: `Tratar OnHold (${number(stats.hold)})`,
-        detail: 'Prioridade m?xima: remover bloqueios antes de atacar volume.',
+        detail: 'Prioridade máxima: remover bloqueios antes de atacar volume.',
         filter: 'OnHold',
         severity: 'critical'
       });
@@ -2197,7 +2197,7 @@
   }
 
   function routeCityDefaults(cityGroups) {
-    const defaultCities = ['Medeiros Neto', 'Nova Vi?osa', 'Posto da Mata'];
+    const defaultCities = ['Medeiros Neto', 'Nova Viçosa', 'Posto da Mata'];
     const available = new Map(cityGroups.map(group => [removeAccents(group.name), group.name]));
     const found = defaultCities.map(city => available.get(removeAccents(city))).filter(Boolean);
     return found.length ? found : cityGroups.slice(0, 1).map(group => group.name);
