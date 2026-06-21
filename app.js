@@ -224,13 +224,24 @@
   }
 
   function repairText(value) {
-    if (!/[ÃƒÃ‚ï¿½]/.test(value)) return value;
+    const commonFixed = value
+      .replaceAll('Cr?tico', 'Crítico')
+      .replaceAll('ocorr?ncias', 'ocorrências')
+      .replaceAll('Prioridade m?dia', 'Prioridade média')
+      .replaceAll('Prioridade m?xima', 'Prioridade máxima')
+      .replaceAll('Nova Vi?osa', 'Nova Viçosa')
+      .replaceAll('Jucuru?u', 'Jucuruçu')
+      .replaceAll('Alcoba?a', 'Alcobaça')
+      .replaceAll('Itanh?m', 'Itanhém')
+      .replaceAll('Lajed?o', 'Lajedão')
+      .replaceAll('Ibirapu?', 'Ibirapuã');
+    if (!/[ÃƒÃ‚ï¿½]/.test(commonFixed)) return commonFixed;
     try {
-      const bytes = Uint8Array.from(Array.from(value), char => char.charCodeAt(0) & 255);
+      const bytes = Uint8Array.from(Array.from(commonFixed), char => char.charCodeAt(0) & 255);
       const fixed = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      return fixed || value;
+      return fixed || commonFixed;
     } catch (error) {
-      return value
+      return commonFixed
         .replaceAll('ÃƒÂ¡', 'Ã¡')
         .replaceAll('Ãƒ ', 'Ã ')
         .replaceAll('ÃƒÂ¢', 'Ã¢')
