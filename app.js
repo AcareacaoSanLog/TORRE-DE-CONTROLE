@@ -16,6 +16,9 @@
   const SUPABASE_KEY = 'sb_publishable_5W-VMD2kk7OmRP1vpEYJ4g_TZCUB93g';
   const CLOUD_TABLE = 'dashboard_state';
   const CLOUD_ID = 'torre-controle-txf-latest';
+  const supabaseClient = window.supabase?.createClient?.(SUPABASE_URL, SUPABASE_KEY) || null;
+  let currentSession = null;
+  let appStarted = false;
   let cloudSaveTimer = null;
 
   const state = {
@@ -160,7 +163,15 @@
     monitorMenu: document.getElementById('monitorMenu'),
     cloudStatus: document.getElementById('cloudStatus'),
     loadCloudBtn: document.getElementById('loadCloudBtn'),
-    saveCloudBtn: document.getElementById('saveCloudBtn')
+    saveCloudBtn: document.getElementById('saveCloudBtn'),
+    authScreen: document.getElementById('authScreen'),
+    authForm: document.getElementById('authForm'),
+    authEmail: document.getElementById('authEmail'),
+    authPassword: document.getElementById('authPassword'),
+    authMessage: document.getElementById('authMessage'),
+    authUserBtn: document.getElementById('authUserBtn'),
+    authUserEmail: document.getElementById('authUserEmail'),
+    logoutBtn: document.getElementById('logoutBtn')
   };
 
   const HISTORY_KEY = 'txf-plus-import-history-v1';
@@ -294,15 +305,16 @@
 
   function loadHistory() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      const parsed = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
       state.history = Array.isArray(parsed) ? parsed.slice(0, HISTORY_LIMIT) : [];
+      localStorage.removeItem(HISTORY_KEY);
     } catch (error) {
       state.history = [];
     }
   }
 
   function persistHistory() {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, HISTORY_LIMIT)));
+    sessionStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, HISTORY_LIMIT)));
   }
 
   function previousSnapshot() {
@@ -435,10 +447,127 @@
     });
   }
 
+  function clearSessionData() {
+    window.clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+    state.rows = [];
+    state.columns = {};
+    state.detectedColumns = {};
+    state.headers = [];
+    state.currentRows = [];
+    state.currentFilter = null;
+    state.stats = null;
+    state.summary = '';
+    state.mapSummary = '';
+    state.managerText = '';
+    state.actionPlanText = '';
+    state.history = [];
+    state.damageRegistry = {};
+    state.treatmentRegistry = {};
+    state.routeCity = '';
+    state.routeCities = [];
+    state.routeSelectionTouched = false;
+    state.importId = '';
+    state.importFiles = [];
+    state.filters = { status: '', city: '', driver: '', scope: '' };
+    state.receivedMonitor = { city: '', bairro: '', sort: 'desc', search: '' };
+    state.assignedMonitor = { city: '', bairro: '', sort: 'desc', search: '' };
+    state.issues = [];
+    try {
+      sessionStorage.removeItem(HISTORY_KEY);
+      localStorage.removeItem(HISTORY_KEY);
+    } catch (error) {
+      console.warn('clearSessionData', error);
+    }
+    if (appStarted) renderAll();
+  }
+
+  function setAuthMessage(message, type = '') {
+    if (!els.authMessage) return;
+    els.authMessage.textContent = message;
+    els.authMessage.className = `auth-message${type ? ` ${type}` : ''}`;
+  }
+
+  function setAuthUi(session) {
+    document.body.classList.toggle('auth-locked', !session);
+    els.authUserBtn?.classList.toggle('hidden', !session);
+    els.logoutBtn?.classList.toggle('hidden', !session);
+    if (els.authUserEmail) els.authUserEmail.textContent = session?.user?.email || 'Equipe';
+  }
+
+  async function verifyAllowedUser(session) {
+    const email = session?.user?.email?.toLowerCase();
+    if (!email || !supabaseClient) return false;
+    const { data, error } = await supabaseClient
+      .from('dashboard_allowed_users')
+      .select('email')
+      .eq('email', email)
+      .maybeSingle();
+    if (error) {
+      console.warn('verifyAllowedUser', error);
+      return false;
+    }
+    return Boolean(data);
+  }
+
+  async function applySession(session) {
+    currentSession = session || null;
+    if (!session) {
+      setAuthUi(null);
+      clearSessionData();
+      return;
+    }
+    setAuthMessage('Validando acesso...', '');
+    const allowed = await verifyAllowedUser(session);
+    if (!allowed) {
+      await supabaseClient.auth.signOut();
+      currentSession = null;
+      setAuthUi(null);
+      clearSessionData();
+      setAuthMessage('Usuário sem permissão. Libere este e-mail no Supabase.', 'error');
+      return;
+    }
+    setAuthUi(session);
+    setAuthMessage('Acesso liberado.', 'ok');
+    startApp();
+  }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    if (!supabaseClient) {
+      setAuthMessage('Não foi possível carregar o login. Verifique a internet e recarregue.', 'error');
+      return;
+    }
+    const email = clean(els.authEmail?.value).toLowerCase();
+    const password = els.authPassword?.value || '';
+    if (!email || !password) {
+      setAuthMessage('Informe e-mail e senha.', 'error');
+      return;
+    }
+    setAuthMessage('Entrando...', '');
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthMessage('Login inválido ou usuário sem acesso.', 'error');
+      console.warn('handleAuthSubmit', error);
+      return;
+    }
+    await applySession(data.session);
+  }
+
+  async function handleLogout() {
+    await supabaseClient?.auth.signOut();
+    currentSession = null;
+    setAuthUi(null);
+    clearSessionData();
+    setAuthMessage('Sessão encerrada.', '');
+  }
+
   function cloudHeaders(extra = {}) {
+    const token = currentSession?.access_token;
+    if (!token) throw new Error('Sessão expirada. Entre novamente.');
     return {
       apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...extra
     };
@@ -566,6 +695,10 @@
   }
 
   async function saveCloudState() {
+    if (!currentSession?.access_token) {
+      setCloudStatus('Nuvem: entre com login para salvar.', 'warn');
+      return false;
+    }
     if (!state.rows.length) {
       setCloudStatus('Nuvem: importe uma planilha antes de salvar.', 'warn');
       return false;
@@ -598,12 +731,16 @@
   }
 
   function scheduleCloudSave(delay = 900) {
-    if (!state.rows.length) return;
+    if (!state.rows.length || !currentSession?.access_token) return;
     window.clearTimeout(cloudSaveTimer);
     cloudSaveTimer = window.setTimeout(() => saveCloudState(), delay);
   }
 
   async function loadCloudState(options = {}) {
+    if (!currentSession?.access_token) {
+      if (!options.silent) setCloudStatus('Nuvem: entre com login para carregar.', 'warn');
+      return false;
+    }
     if (!options.silent) setCloudStatus('Nuvem: carregando última importação...', 'warn');
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?id=eq.${encodeURIComponent(CLOUD_ID)}&select=payload,updated_at`, {
@@ -2522,6 +2659,11 @@
     URL.revokeObjectURL(link.href);
   }
 
+  function bindAuthEvents() {
+    els.authForm?.addEventListener('submit', handleAuthSubmit);
+    els.logoutBtn?.addEventListener('click', handleLogout);
+  }
+
   function bindEvents() {
     document.querySelectorAll('.nav-button').forEach(button => {
       if (button.dataset.view) button.addEventListener('click', () => setView(button.dataset.view));
@@ -2779,8 +2921,18 @@
     if (window.lucide) window.lucide.createIcons();
   }
 
-  function init() {
-    loadHistory();
+  function startApp() {
+    if (appStarted) {
+      loadCloudState({ silent: true });
+      return;
+    }
+    appStarted = true;
+    loadHistory();
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch (error) {
+      console.warn('startApp', error);
+    }
     els.cepCount.textContent = number(Object.keys(cepMap).length);
     bindEvents();
     renderAll();
@@ -2789,5 +2941,22 @@
     loadCloudState({ silent: true });
   }
 
-  init();
+  async function initAuth() {
+    bindAuthEvents();
+    repairVisibleText();
+    refreshIcons();
+    if (!supabaseClient) {
+      setAuthUi(null);
+      setAuthMessage('Não foi possível carregar o login. Verifique a internet e recarregue.', 'error');
+      return;
+    }
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) console.warn('initAuth', error);
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
+    });
+    await applySession(data?.session || null);
+  }
+
+  initAuth();
 }());
