@@ -40,6 +40,20 @@ body.auth-locked .app-shell {
   user-select: none;
 }
 
+html.has-auth-session body.auth-locked {
+  overflow: auto;
+}
+
+html.has-auth-session body.auth-locked .app-shell {
+  filter: none;
+  pointer-events: auto;
+  user-select: auto;
+}
+
+html.has-auth-session body.auth-locked .auth-screen {
+  display: none;
+}
+
 .auth-screen {
   position: fixed;
   inset: 0;

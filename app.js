@@ -515,6 +515,8 @@
   }
 
   function setAuthUi(session) {
+    document.body.classList.remove('auth-checking');
+    document.documentElement.classList.toggle('has-auth-session', Boolean(session));
     document.body.classList.toggle('auth-locked', !session);
     els.authUserBtn?.classList.toggle('hidden', !session);
     els.logoutBtn?.classList.toggle('hidden', !session);

@@ -4,7 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TORRE DE CONTROLE TXF</title>
-  <link rel="stylesheet" href="styles.css?v=auth-check-20260622">
+  <script>
+    (function () {
+      try {
+        var hasSession = Object.keys(localStorage).some(function (key) {
+          if (!/^sb-.+-auth-token$/.test(key)) return false;
+          var session = JSON.parse(localStorage.getItem(key) || '{}');
+          return Boolean(session && session.access_token);
+        });
+        if (hasSession) document.documentElement.classList.add('has-auth-session');
+      } catch (error) {}
+    }());
+  </script>
+  <link rel="stylesheet" href="styles.css?v=auth-session-fix-20260622">
 </head>
 <body class="auth-locked auth-checking">
   <section class="auth-screen" id="authScreen">
@@ -551,6 +563,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cep-map.js?v=cep1678-20260620"></script>
   <script src="driver-db.js"></script>
-  <script src="app.js?v=auth-check-20260622"></script>
+  <script src="app.js?v=auth-session-fix-20260622"></script>
 </body>
 </html>
