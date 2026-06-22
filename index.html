@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TORRE DE CONTROLE TXF</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=modal-filters-20260621">
 </head>
 <body class="auth-locked">
   <section class="auth-screen" id="authScreen">
@@ -499,9 +499,47 @@
           <button class="icon-button" value="cancel" title="Fechar" aria-label="Fechar"><i data-lucide="x"></i></button>
         </div>
       </div>
-      <div class="search-row modal-search">
-        <i data-lucide="filter"></i>
-        <input id="modalSearch" type="search" placeholder="Filtrar lista aberta">
+      <div class="modal-filter-panel">
+        <label>
+          <span>Status</span>
+          <select id="modalStatusFilter">
+            <option value="">Todos</option>
+          </select>
+        </label>
+        <label>
+          <span>Cidade</span>
+          <select id="modalCityFilter">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <label>
+          <span>Bairro</span>
+          <select id="modalBairroFilter">
+            <option value="">Todos</option>
+          </select>
+        </label>
+        <label>
+          <span>Driver</span>
+          <select id="modalDriverFilter">
+            <option value="">Todos</option>
+          </select>
+        </label>
+        <label>
+          <span>Ordenar</span>
+          <select id="modalSortFilter">
+            <option value="default">Padrão</option>
+            <option value="city">Cidade</option>
+            <option value="bairro">Bairro</option>
+            <option value="status">Status</option>
+            <option value="driver">Driver</option>
+            <option value="tracking">Tracking</option>
+          </select>
+        </label>
+        <label class="modal-search-field">
+          <span>Buscar BR</span>
+          <input id="modalSearch" type="search" placeholder="Digite BR, tracking, CEP ou tratativa">
+        </label>
+        <button class="mini-button modal-clear-filters" id="modalClearFiltersBtn" type="button">Limpar filtros</button>
       </div>
       <div class="table-wrap modal-table"><table><thead><tr id="modalHeader"><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver</th><th>Arquivo</th></tr></thead><tbody id="modalRows"></tbody></table></div>
     </form>
@@ -512,6 +550,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cep-map.js?v=cep1678-20260620"></script>
   <script src="driver-db.js"></script>
-  <script src="app.js?v=fix-text-critico-20260621-2"></script>
+  <script src="app.js?v=modal-filters-20260621"></script>
 </body>
 </html>

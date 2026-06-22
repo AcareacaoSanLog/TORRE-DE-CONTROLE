@@ -28,6 +28,15 @@
     headers: [],
     currentRows: [],
     currentFilter: null,
+    modalVisibleRows: [],
+    modalFilters: {
+      search: '',
+      status: '',
+      city: '',
+      bairro: '',
+      driver: '',
+      sort: 'default'
+    },
     stats: null,
     summary: '',
     mapSummary: '',
@@ -132,6 +141,12 @@
     modalTitle: document.getElementById('modalTitle'),
     modalSubtitle: document.getElementById('modalSubtitle'),
     modalSearch: document.getElementById('modalSearch'),
+    modalStatusFilter: document.getElementById('modalStatusFilter'),
+    modalCityFilter: document.getElementById('modalCityFilter'),
+    modalBairroFilter: document.getElementById('modalBairroFilter'),
+    modalDriverFilter: document.getElementById('modalDriverFilter'),
+    modalSortFilter: document.getElementById('modalSortFilter'),
+    modalClearFiltersBtn: document.getElementById('modalClearFiltersBtn'),
     modalHeader: document.getElementById('modalHeader'),
     modalRows: document.getElementById('modalRows'),
     copyRowsBtn: document.getElementById('copyRowsBtn'),
@@ -2444,17 +2459,89 @@
     state.currentFilter = filter;
     state.currentRows = filteredRows(filter);
     els.modalTitle.textContent = title || 'Detalhes';
-    els.modalSubtitle.textContent = `${number(state.currentRows.length)} pacotes encontrados`;
-    els.modalSearch.value = '';
+    resetModalFilters();
+    renderModalFilterOptions();
     renderModalRows();
     els.modal.showModal();
     refreshIcons();
   }
 
+  function resetModalFilters() {
+    state.modalFilters = {
+      search: '',
+      status: '',
+      city: '',
+      bairro: '',
+      driver: '',
+      sort: 'default'
+    };
+    if (els.modalSearch) els.modalSearch.value = '';
+    if (els.modalStatusFilter) els.modalStatusFilter.value = '';
+    if (els.modalCityFilter) els.modalCityFilter.value = '';
+    if (els.modalBairroFilter) els.modalBairroFilter.value = '';
+    if (els.modalDriverFilter) els.modalDriverFilter.value = '';
+    if (els.modalSortFilter) els.modalSortFilter.value = 'default';
+  }
+
+  function modalOptionList(rows, getter) {
+    return Array.from(new Set(rows.map(getter).map(clean).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' }));
+  }
+
+  function fillModalSelect(select, options, emptyLabel, currentValue) {
+    if (!select) return;
+    select.innerHTML = `<option value="">${html(emptyLabel)}</option>${options.map(option => `<option value="${html(option)}">${html(option)}</option>`).join('')}`;
+    select.value = options.includes(currentValue) ? currentValue : '';
+  }
+
+  function renderModalFilterOptions() {
+    const baseRows = state.currentRows || [];
+    const cityRows = state.modalFilters.status
+      ? baseRows.filter(row => displayStatusOf(row) === state.modalFilters.status)
+      : baseRows;
+    const bairroRows = state.modalFilters.city
+      ? cityRows.filter(row => value(row, 'city') === state.modalFilters.city)
+      : cityRows;
+
+    fillModalSelect(els.modalStatusFilter, modalOptionList(baseRows, row => displayStatusOf(row)), 'Todos', state.modalFilters.status);
+    fillModalSelect(els.modalCityFilter, modalOptionList(cityRows, row => value(row, 'city')), 'Todas', state.modalFilters.city);
+    fillModalSelect(els.modalBairroFilter, modalOptionList(bairroRows, row => value(row, 'bairro')), 'Todos', state.modalFilters.bairro);
+    fillModalSelect(els.modalDriverFilter, modalOptionList(baseRows, row => value(row, 'driver')), 'Todos', state.modalFilters.driver);
+    if (els.modalSortFilter) els.modalSortFilter.value = state.modalFilters.sort || 'default';
+    if (els.modalSearch) els.modalSearch.value = state.modalFilters.search || '';
+  }
+
+  function modalSortValue(row, sort) {
+    if (sort === 'city') return value(row, 'city');
+    if (sort === 'bairro') return value(row, 'bairro');
+    if (sort === 'status') return displayStatusOf(row);
+    if (sort === 'driver') return value(row, 'driver') || value(row, 'driverId');
+    if (sort === 'tracking') return value(row, 'tracking');
+    return '';
+  }
+
+  function filteredModalRows() {
+    const filters = state.modalFilters || {};
+    const query = low(filters.search);
+    const rows = (state.currentRows || []).filter(row => {
+      if (filters.status && displayStatusOf(row) !== filters.status) return false;
+      if (filters.city && value(row, 'city') !== filters.city) return false;
+      if (filters.bairro && value(row, 'bairro') !== filters.bairro) return false;
+      if (filters.driver && value(row, 'driver') !== filters.driver) return false;
+      return !query || low(rowSearchText(row)).includes(query);
+    });
+    if (filters.sort && filters.sort !== 'default') {
+      rows.sort((a, b) => modalSortValue(a, filters.sort).localeCompare(modalSortValue(b, filters.sort), 'pt-BR', { numeric: true, sensitivity: 'base' }));
+    }
+    return rows;
+  }
+
   function renderModalRows() {
     renderModalHeader();
-    const query = low(els.modalSearch.value);
-    const rows = state.currentRows.filter(row => !query || low(rowSearchText(row)).includes(query)).slice(0, 1500);
+    const filteredRows = filteredModalRows();
+    state.modalVisibleRows = filteredRows;
+    els.modalSubtitle.textContent = `${number(filteredRows.length)} de ${number(state.currentRows.length)} pacotes encontrados`;
+    const rows = filteredRows.slice(0, 1500);
     const actionable = isReceivedActionModal();
     els.modalRows.innerHTML = rows.map(row => actionable ? renderReceivedActionRow(row) : `
       <tr>
@@ -2463,10 +2550,11 @@
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
+        <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
         <td>${html(row.__file || '')}</td>
       </tr>
-    `).join('') || '<tr><td colspan="8">Nada encontrado.</td></tr>';
+    `).join('') || '<tr><td colspan="8">Nada encontrado com os filtros atuais.</td></tr>';
   }
 
   function renderModalHeader() {
@@ -2515,6 +2603,7 @@
     rememberTreatment(row);
     renderAll();
     state.currentRows = filteredRows(state.currentFilter || { kind: 'Hub_Received' });
+    renderModalFilterOptions();
     renderModalRows();
     if (state.rows.length) saveCloudState();
   }
@@ -2697,8 +2786,8 @@
           state.currentFilter = filter;
           state.currentRows = state.rows.filter(row => value(row, 'tracking') === tracking);
           els.modalTitle.textContent = `Tracking: ${tracking}`;
-          els.modalSubtitle.textContent = `${number(state.currentRows.length)} registros encontrados`;
-          els.modalSearch.value = '';
+          resetModalFilters();
+          renderModalFilterOptions();
           renderModalRows();
           els.modal.showModal();
           refreshIcons();
@@ -2720,8 +2809,8 @@
         state.currentFilter = { kind: 'notDelivered', region };
         state.currentRows = rowsByRegion(region);
         els.modalTitle.textContent = `Região: ${region}`;
-        els.modalSubtitle.textContent = `${number(state.currentRows.length)} pendentes encontrados`;
-        els.modalSearch.value = '';
+        resetModalFilters();
+        renderModalFilterOptions();
         renderModalRows();
         els.modal.showModal();
         refreshIcons();
@@ -2825,8 +2914,39 @@
       renderAssignedMonitor();
     });
     els.searchInput.addEventListener('input', renderSearch);
-    els.modalSearch.addEventListener('input', renderModalRows);
-    els.copyRowsBtn.addEventListener('click', () => copyRows(state.currentRows));
+    els.modalSearch.addEventListener('input', () => {
+      state.modalFilters.search = els.modalSearch.value;
+      renderModalRows();
+    });
+    els.modalStatusFilter.addEventListener('change', () => {
+      state.modalFilters.status = els.modalStatusFilter.value;
+      renderModalFilterOptions();
+      renderModalRows();
+    });
+    els.modalCityFilter.addEventListener('change', () => {
+      state.modalFilters.city = els.modalCityFilter.value;
+      state.modalFilters.bairro = '';
+      renderModalFilterOptions();
+      renderModalRows();
+    });
+    els.modalBairroFilter.addEventListener('change', () => {
+      state.modalFilters.bairro = els.modalBairroFilter.value;
+      renderModalRows();
+    });
+    els.modalDriverFilter.addEventListener('change', () => {
+      state.modalFilters.driver = els.modalDriverFilter.value;
+      renderModalRows();
+    });
+    els.modalSortFilter.addEventListener('change', () => {
+      state.modalFilters.sort = els.modalSortFilter.value || 'default';
+      renderModalRows();
+    });
+    els.modalClearFiltersBtn.addEventListener('click', () => {
+      resetModalFilters();
+      renderModalFilterOptions();
+      renderModalRows();
+    });
+    els.copyRowsBtn.addEventListener('click', () => copyRows(state.modalVisibleRows.length ? state.modalVisibleRows : state.currentRows));
     els.copySummaryBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar o resumo.'));
     els.copyMissionBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.summary || 'Importe os arquivos para gerar a missão.'));
     els.copyMapBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.mapSummary || 'Importe os arquivos para gerar o mapa operacional.'));
