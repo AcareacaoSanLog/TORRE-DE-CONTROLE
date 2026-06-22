@@ -57,6 +57,21 @@ body:not(.auth-locked) .auth-screen {
   display: none;
 }
 
+body.auth-checking .auth-screen::after {
+  content: "Validando sessão...";
+  border: 1px solid rgba(48, 198, 217, .28);
+  border-radius: 8px;
+  padding: 14px 18px;
+  color: var(--text);
+  background: #101721;
+  box-shadow: var(--shadow);
+  font-weight: 900;
+}
+
+body.auth-checking .auth-card {
+  display: none;
+}
+
 .auth-card {
   width: min(420px, 100%);
   display: grid;
