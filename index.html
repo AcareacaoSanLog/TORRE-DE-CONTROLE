@@ -108,7 +108,7 @@
           <label class="import-button" id="dropZone">
             <i data-lucide="upload-cloud"></i>
             <span>Exportar expectativa do dia</span>
-            <input id="fileInput" type="file" multiple accept=".csv,.xlsx,.xls">
+            <input id="fileInput" type="file" multiple accept=".csv,.xlsx,.xls,.zip">
           </label>
         </div>
       </header>
@@ -547,9 +547,10 @@
 
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cep-map.js?v=cep1678-20260620"></script>
   <script src="driver-db.js"></script>
-  <script src="app.js?v=modal-filters-20260621"></script>
+  <script src="app.js?v=zip-import-20260622"></script>
 </body>
 </html>

@@ -2429,12 +2429,12 @@
 
     const allRows = [];
     for (const file of files) {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
-      workbook.SheetNames.forEach(sheetName => {
-        const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
-        json.forEach(row => allRows.push({ ...row, __file: file.name, __sheet: sheetName }));
-      });
+      await importExpectationFile(file, allRows);
+    }
+
+    if (!allRows.length) {
+      alert('Nenhuma planilha válida foi encontrada. Envie CSV, XLSX, XLS ou um ZIP com esses arquivos.');
+      return;
     }
 
     state.rows = allRows;
@@ -2453,6 +2453,35 @@
     renderAll();
     setView('columns');
     await saveCloudState();
+  }
+
+  async function importExpectationFile(file, targetRows) {
+    const filename = clean(file.name);
+    if (filename.toLowerCase().endsWith('.zip')) {
+      if (typeof JSZip === 'undefined') {
+        alert('A biblioteca ZIP não carregou. Abra com internet ativa ou envie as planilhas sem compactar.');
+        return;
+      }
+      const zip = await JSZip.loadAsync(file);
+      const entries = Object.values(zip.files)
+        .filter(entry => !entry.dir && /\.(csv|xlsx|xls)$/i.test(entry.name));
+      for (const entry of entries) {
+        const data = await entry.async('arraybuffer');
+        importWorkbookRows(data, `${filename}/${entry.name}`, targetRows);
+      }
+      return;
+    }
+    if (!/\.(csv|xlsx|xls)$/i.test(filename)) return;
+    const data = await file.arrayBuffer();
+    importWorkbookRows(data, filename, targetRows);
+  }
+
+  function importWorkbookRows(data, filename, targetRows) {
+    const workbook = XLSX.read(data, { type: 'array' });
+    workbook.SheetNames.forEach(sheetName => {
+      const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+      json.forEach(row => targetRows.push({ ...row, __file: filename, __sheet: sheetName }));
+    });
   }
 
   function openDetails(filter, title) {
