@@ -21,6 +21,7 @@
   let appStarted = false;
   let cloudSaveTimer = null;
   let cloudLoadInProgress = false;
+  let importInProgress = false;
   let iconRefreshFrame = null;
   let textRepairPerformed = false;
   const ACTIVE_VIEW_KEY = 'txf-plus-active-view-v2';
@@ -426,13 +427,13 @@
       .sort((a, b) => b.critical - a.critical || b.pending - a.pending || a.city.localeCompare(b.city, 'pt-BR'));
   }
 
-  function saveCurrentImport() {
-    const fullStats = summarizeRows(state.rows);
+  function saveCurrentImport(statsOverride = null) {
+    const fullStats = statsOverride || summarizeRows(state.rows);
     if (!fullStats.total) return;
     const snapshot = createSnapshot(fullStats);
     state.history = [snapshot].concat(state.history.filter(item => item.id !== snapshot.id)).slice(0, HISTORY_LIMIT);
     persistHistory();
-    state.stats = summarize();
+    state.stats = fullStats;
   }
 
   function deltaValue(current, previous, key) {
@@ -2488,40 +2489,213 @@
     refreshIcons();
   }
 
+  function nextFrame() {
+    return new Promise(resolve => {
+      if (window.requestAnimationFrame) requestAnimationFrame(() => resolve());
+      else setTimeout(resolve, 0);
+    });
+  }
+
+  function idleDelay(timeout = 250) {
+    return new Promise(resolve => {
+      if (window.requestIdleCallback) requestIdleCallback(() => resolve(), { timeout });
+      else setTimeout(resolve, 0);
+    });
+  }
+
+  function setImportBusy(isBusy, message = '') {
+    importInProgress = isBusy;
+    if (els.fileInput) els.fileInput.disabled = isBusy;
+    if (els.dropZone) {
+      els.dropZone.classList.toggle('importing', isBusy);
+      if (message) els.dropZone.setAttribute('title', message);
+      else els.dropZone.removeAttribute('title');
+    }
+    [els.saveCloudBtn, els.loadCloudBtn].forEach(button => {
+      if (button) button.disabled = isBusy;
+    });
+    if (message) setCloudStatus(message, isBusy ? 'warn' : 'ok');
+  }
+
+  function createImportWorker() {
+    if (!window.Worker || !window.Blob || !window.URL) return null;
+    const workerCode = `
+      let libsReady = false;
+      function postProgress(message) { self.postMessage({ type: 'progress', message }); }
+      function cleanText(value) { return String(value ?? '').trim(); }
+      function loadLibs(baseUrl, needsZip) {
+        if (!libsReady) {
+          importScripts(baseUrl + 'vendor/xlsx.full.min.js');
+          libsReady = true;
+        }
+        if (needsZip && typeof JSZip === 'undefined') {
+          importScripts('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+        }
+      }
+      function importWorkbookRows(buffer, filename, targetRows) {
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+        workbook.SheetNames.forEach(sheetName => {
+          const sheet = workbook.Sheets[sheetName];
+          const json = XLSX.utils.sheet_to_json(sheet, { defval: '', blankrows: false });
+          for (let i = 0; i < json.length; i += 1) {
+            targetRows.push({ ...json[i], __file: filename, __sheet: sheetName });
+          }
+        });
+      }
+      self.onmessage = async event => {
+        const { files, baseUrl } = event.data || {};
+        const rows = [];
+        try {
+          const list = Array.from(files || []);
+          const needsZip = list.some(file => cleanText(file.name).toLowerCase().endsWith('.zip'));
+          loadLibs(baseUrl, needsZip);
+          for (let i = 0; i < list.length; i += 1) {
+            const file = list[i];
+            const filename = cleanText(file.name);
+            postProgress('Importando ' + filename + '...');
+            if (filename.toLowerCase().endsWith('.zip')) {
+              if (typeof JSZip === 'undefined') throw new Error('Biblioteca ZIP não carregou.');
+              const zip = await JSZip.loadAsync(file);
+              const entries = Object.values(zip.files).filter(entry => !entry.dir && /\\.(csv|xlsx|xls)$/i.test(entry.name));
+              for (const entry of entries) {
+                postProgress('Lendo ' + entry.name + '...');
+                const data = await entry.async('arraybuffer');
+                importWorkbookRows(data, filename + '/' + entry.name, rows);
+              }
+            } else if (/\\.(csv|xlsx|xls)$/i.test(filename)) {
+              const data = await file.arrayBuffer();
+              importWorkbookRows(data, filename, rows);
+            }
+          }
+          self.postMessage({ type: 'done', rows });
+        } catch (error) {
+          self.postMessage({ type: 'error', message: cleanText(error && error.message ? error.message : error) });
+        }
+      };
+    `;
+    try {
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      return new Worker(URL.createObjectURL(blob));
+    } catch (error) {
+      console.warn('createImportWorker', error);
+      return null;
+    }
+  }
+
+  function importFilesWithWorker(files) {
+    const worker = createImportWorker();
+    if (!worker) return Promise.reject(new Error('Worker indisponível'));
+    const baseUrl = new URL('./', window.location.href).href;
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      const timeout = window.setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        worker.terminate();
+        reject(new Error('A importação demorou demais no modo rápido.'));
+      }, 120000);
+      worker.onmessage = event => {
+        const data = event.data || {};
+        if (data.type === 'progress' && data.message) setCloudStatus(`Importação: ${data.message}`, 'warn');
+        if (data.type === 'done') {
+          finished = true;
+          window.clearTimeout(timeout);
+          worker.terminate();
+          resolve(Array.isArray(data.rows) ? data.rows : []);
+        }
+        if (data.type === 'error') {
+          finished = true;
+          window.clearTimeout(timeout);
+          worker.terminate();
+          reject(new Error(data.message || 'Erro ao importar no modo rápido.'));
+        }
+      };
+      worker.onerror = error => {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(timeout);
+        worker.terminate();
+        reject(error);
+      };
+      worker.postMessage({ files: Array.from(files), baseUrl });
+    });
+  }
+
+  async function importFilesFallback(files) {
+    const allRows = [];
+    for (const file of files) {
+      setCloudStatus(`Importação: lendo ${file.name}...`, 'warn');
+      await nextFrame();
+      await importExpectationFile(file, allRows);
+      await idleDelay(80);
+    }
+    return allRows;
+  }
+
   async function handleFiles(files) {
     if (!files || !files.length) return;
-    if (typeof XLSX === 'undefined') {
+    if (importInProgress) {
+      setCloudStatus('Importação: aguarde o arquivo atual terminar antes de iniciar outra importação.', 'warn');
+      return;
+    }
+    const selectedFiles = Array.from(files);
+    if (typeof XLSX === 'undefined' && !window.Worker) {
       alert('A biblioteca XLSX não carregou. Abra com internet ativa para importar planilhas.');
       return;
     }
-    captureTreatmentRegistryFromRows();
 
-    const allRows = [];
-    for (const file of files) {
-      await importExpectationFile(file, allRows);
+    setImportBusy(true, 'Importação: preparando arquivo...');
+    await nextFrame();
+
+    try {
+      captureTreatmentRegistryFromRows();
+
+      let allRows = [];
+      try {
+        allRows = await importFilesWithWorker(selectedFiles);
+      } catch (workerError) {
+        console.warn('importFilesWithWorker fallback', workerError);
+        if (typeof XLSX === 'undefined') throw workerError;
+        setCloudStatus('Importação: usando modo compatível...', 'warn');
+        allRows = await importFilesFallback(selectedFiles);
+      }
+
+      if (!allRows.length) {
+        alert('Nenhuma planilha válida foi encontrada. Envie CSV, XLSX, XLS ou um ZIP com esses arquivos.');
+        return;
+      }
+
+      setCloudStatus(`Importação: ${number(allRows.length)} pacotes lidos. Montando dashboard...`, 'warn');
+      await nextFrame();
+
+      state.rows = allRows;
+      state.importId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      state.importFiles = selectedFiles.map(file => file.name);
+      state.routeCities = [];
+      state.routeCity = '';
+      state.routeSelectionTouched = false;
+      ensureRowIds();
+      clearFilters();
+      state.headers = detectHeaders(allRows);
+      state.detectedColumns = detectColumns(allRows);
+      state.columns = { ...state.detectedColumns };
+      applyDamageRegistryToRows();
+      applyTreatmentRegistryToRows();
+
+      await nextFrame();
+      renderAll();
+      saveCurrentImport(state.stats);
+      setView('dashboard');
+      setCloudStatus(`Importação concluída: ${number(allRows.length)} pacotes carregados. Salvando na nuvem em segundo plano...`, 'ok');
+      scheduleCloudSave(1200);
+    } catch (error) {
+      console.error('handleFiles', error);
+      setCloudStatus(`Importação: erro ao processar arquivo (${friendlyCloudError(error)}).`, 'error');
+      alert(`Erro ao importar: ${friendlyCloudError(error)}.`);
+    } finally {
+      if (els.fileInput) els.fileInput.value = '';
+      setImportBusy(false);
     }
-
-    if (!allRows.length) {
-      alert('Nenhuma planilha válida foi encontrada. Envie CSV, XLSX, XLS ou um ZIP com esses arquivos.');
-      return;
-    }
-
-    state.rows = allRows;
-    state.importId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    state.importFiles = Array.from(files).map(file => file.name);
-    state.routeCities = [];
-    state.routeCity = '';
-    state.routeSelectionTouched = false;
-    ensureRowIds();
-    clearFilters();
-    state.headers = detectHeaders(allRows);
-    state.detectedColumns = detectColumns(allRows);
-    state.columns = { ...state.detectedColumns };
-    applyDamageRegistryToRows();
-    applyTreatmentRegistryToRows();
-    renderAll();
-    setView('columns');
-    await saveCloudState();
   }
 
   async function importExpectationFile(file, targetRows) {
@@ -3072,12 +3246,13 @@
       els.columnMapper.querySelectorAll('select').forEach(select => {
         state.columns[select.dataset.columnType] = select.value;
       });
+      setCloudStatus('Colunas: aplicando ajustes...', 'warn');
+      await nextFrame();
       renderAll();
-      saveCurrentImport();
-      renderHistory();
-      renderManager(state.stats);
-      await saveCloudState();
+      saveCurrentImport(state.stats);
       setView('dashboard');
+      setCloudStatus('Colunas aplicadas. Salvando na nuvem em segundo plano...', 'ok');
+      scheduleCloudSave(900);
     });
     els.resetColumnsBtn.addEventListener('click', () => {
       state.detectedColumns = detectColumns(state.rows);

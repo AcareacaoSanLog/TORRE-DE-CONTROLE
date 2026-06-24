@@ -2531,3 +2531,17 @@ td {
 .brand .shopee-xpress:focus-visible strong {
   color: #ff6b52;
 }
+
+
+/* Ajuste de fluidez na importação */
+.import-button.importing {
+  opacity: 0.72;
+  pointer-events: none;
+  filter: saturate(0.85);
+}
+
+.icon-button:disabled,
+.import-button input:disabled + * {
+  opacity: 0.55;
+  cursor: wait;
+}
