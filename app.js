@@ -1731,9 +1731,13 @@
       ? onHoldGroups.map((item, index) => `${index + 1}. ${item.driver} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
       : 'Sem BR em OnHold no momento.';
 
+    const managerDate = new Date(snapshot.date);
+    const managerDateText = managerDate.toLocaleDateString('pt-BR');
+    const managerTimeText = managerDate.toLocaleTimeString('pt-BR');
+
     return [
-      '📊 RESUMO GERENCIAL - TORRE DE CONTROLE TXF',
-      `🕒 Atualização: ${new Date(snapshot.date).toLocaleString('pt-BR')}`,
+      `📊 EXPECTATIVA DO DIA — ${managerDateText}`,
+      `🕒 Atualizado às ${managerTimeText}`,
       '',
       '🎯 INDICADORES DE META',
       `✅ Delivered: ${number(snapshot.delivered)}${deliveredPct}`,
