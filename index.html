@@ -243,7 +243,7 @@
             <button class="text-button" id="resetColumnsBtn">Redetectar</button>
           </div>
           <div id="columnQuality" class="quality-grid"></div>
-          <div class="table-wrap"><table><thead><tr><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver</th><th>Arquivo</th></tr></thead><tbody id="previewRows"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th></tr></thead><tbody id="previewRows"></tbody></table></div>
         </section>
       </section>
 
@@ -490,7 +490,7 @@
           <div class="panel-head"><h3>🔍 Pesquisa 360</h3></div>
           <div class="search-row">
             <i data-lucide="search"></i>
-            <input id="searchInput" type="search" placeholder="Tracking, CEP, status, cidade, bairro, driver ou arquivo">
+            <input id="searchInput" type="search" placeholder="Tracking, CEP, status, cidade, bairro ou driver">
           </div>
           <div id="searchResults" class="result-list"></div>
         </section>
@@ -553,7 +553,7 @@
         </label>
         <button class="mini-button modal-clear-filters" id="modalClearFiltersBtn" type="button">Limpar filtros</button>
       </div>
-      <div class="table-wrap modal-table"><table><thead><tr id="modalHeader"><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver</th><th>Arquivo</th></tr></thead><tbody id="modalRows"></tbody></table></div>
+      <div class="table-wrap modal-table"><table><thead><tr id="modalHeader"><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th></tr></thead><tbody id="modalRows"></tbody></table></div>
     </form>
   </dialog>
 
@@ -563,6 +563,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cep-map.js?v=cep1678-20260620"></script>
   <script src="driver-db.js"></script>
-  <script src="app.js?v=importacao-fluida-rapida-20260624"></script>
+  <script src="app.js?v=sem-arquivo-visual-20260624"></script>
 </body>
 </html>

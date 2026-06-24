@@ -1171,7 +1171,6 @@
         <td>${html(value(row, 'bairro'))}</td>
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
-        <td>${html(row.__file || '')}</td>
       </tr>
     `).join('') || '<tr><td colspan="7">Sem linhas para exibir.</td></tr>';
   }
@@ -1646,7 +1645,7 @@
     const previous = previousSnapshot();
     const actionItems = buildActionItems(stats, snapshot);
     state.actionPlanText = actionItems.map((item, index) => `${index + 1}. ${item.title} - ${item.detail}`).join('\n');
-    state.managerText = buildManagerText(snapshot, previous, actionItems);
+    state.managerText = buildManagerText(snapshot, previous, actionItems, stats);
 
     els.managerSummary.value = state.managerText;
     renderComparison(snapshot, previous);
@@ -1713,39 +1712,87 @@
     return items.slice(0, 6);
   }
 
-  function buildManagerText(snapshot, previous, actionItems) {
-    const diff = previous ? [
-      `Variação vs importação anterior:`,
-      `Delivered: ${signed(snapshot.delivered - previous.delivered)}`,
-      `Pendentes: ${signed(snapshot.pending - previous.pending)}`,
-      `OnHold: ${signed(snapshot.hold - previous.hold)}`,
-      `SLA: ${signed(snapshot.sla - previous.sla, ' p.p.')}`
-    ] : ['Primeira importação salva no histórico desta sessão.'];
-    const topCityText = snapshot.topCities.length
-      ? snapshot.topCities.slice(0, 5).map(([city, qty], index) => `${index + 1}. ${city}: ${number(qty)} ${plural(qty, 'pendente', 'pendentes')}`).join('\n')
-      : 'Sem cidades pendentes.';
-    const actions = actionItems.length
-      ? actionItems.map((item, index) => `${index + 1}. ${item.title}: ${item.detail}`).join('\n')
-      : 'Sem ação crítica identificada.';
+  function buildManagerText(snapshot, previous, actionItems, stats) {
+    const rows = visibleRows();
+    const receivedGroups = managerReceivedGroups(rows);
+    const assignedGroups = managerAssignedGroups(rows);
+    const onHoldGroups = managerOnHoldDriverGroups(rows);
+    const deliveredPct = snapshot.total ? ` (${snapshot.sla.toFixed(2).replace('.', ',')}% do total)` : '';
+
+    const receivedText = receivedGroups.length
+      ? receivedGroups.map((item, index) => `${index + 1}. ${item.city} / ${item.bairro} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')} | Tratativa: ${item.treatment}`).join('\n')
+      : 'Sem BR em Hub Received no momento.';
+
+    const assignedText = assignedGroups.length
+      ? assignedGroups.map((item, index) => `${index + 1}. ${item.city} / ${item.bairro} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
+      : 'Sem BR em Hub Assigned no momento.';
+
+    const onHoldText = onHoldGroups.length
+      ? onHoldGroups.map((item, index) => `${index + 1}. ${item.driver} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
+      : 'Sem BR em OnHold no momento.';
 
     return [
-      'RESUMO GERENCIAL - TORRE DE CONTROLE TXF',
-      `Atualização: ${new Date(snapshot.date).toLocaleString('pt-BR')}`,
-      `Arquivos: ${snapshot.files.join(', ') || 'sem nome'}`,
+      '📊 RESUMO GERENCIAL - TORRE DE CONTROLE TXF',
+      `🕒 Atualização: ${new Date(snapshot.date).toLocaleString('pt-BR')}`,
       '',
-      `Total: ${number(snapshot.total)}`,
-      `Delivered: ${number(snapshot.delivered)} (${snapshot.sla.toFixed(2).replace('.', ',')}%)`,
-      `Pendentes: ${number(snapshot.pending)}`,
-      `Received: ${number(snapshot.received)} | Assigned: ${number(snapshot.assigned)} | Delivering: ${number(snapshot.delivering)} | SOC LH: ${number(snapshot.socLH)} | OnHold: ${number(snapshot.hold)}`,
+      '🎯 INDICADORES DE META',
+      `✅ Delivered: ${number(snapshot.delivered)}${deliveredPct}`,
+      `🚚 SOC LH: ${number(snapshot.socLH)} ${plural(snapshot.socLH, 'BR', 'BRs')}`,
       '',
-      ...diff,
+      '📦 HUB RECEIVED — CIDADE/BAIRRO, QTD E TRATATIVA',
+      receivedText,
       '',
-      'Cidades críticas:',
-      topCityText,
+      '🧭 HUB ASSIGNED — CIDADE/BAIRRO E QTD',
+      assignedText,
       '',
-      'Plano de ação:',
-      actions
+      '⏸️ ONHOLD — POR ENTREGADOR',
+      onHoldText
     ].join('\n');
+  }
+
+  function managerReceivedGroups(rows) {
+    const groups = new Map();
+    rows.filter(row => isReceived(statusOf(row))).forEach(row => {
+      const city = value(row, 'city');
+      const bairro = value(row, 'bairro');
+      const key = groupKey([city, bairro]);
+      if (!groups.has(key)) groups.set(key, { city, bairro, qty: 0, treatments: new Map() });
+      const data = groups.get(key);
+      data.qty += 1;
+      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || 'Sem tratativa registrada');
+      data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
+    });
+    return Array.from(groups.values())
+      .map(item => ({ ...item, treatment: formatGroupTreatments(item.treatments) }))
+      .sort((a, b) => b.qty - a.qty || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'));
+  }
+
+  function managerAssignedGroups(rows) {
+    const groups = new Map();
+    rows.filter(row => isAssigned(statusOf(row))).forEach(row => {
+      const city = value(row, 'city');
+      const bairro = value(row, 'bairro');
+      const key = groupKey([city, bairro]);
+      if (!groups.has(key)) groups.set(key, { city, bairro, qty: 0 });
+      groups.get(key).qty += 1;
+    });
+    return Array.from(groups.values())
+      .sort((a, b) => b.qty - a.qty || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'));
+  }
+
+  function managerOnHoldDriverGroups(rows) {
+    const groups = new Map();
+    rows.filter(row => statusOf(row) === 'OnHold').forEach(row => {
+      const driver = driverInfo(row);
+      const label = driver.id
+        ? `${driver.id} - ${driver.name || 'Sem nome'}`
+        : (driver.name || value(row, 'driver') || 'Sem entregador');
+      const key = low(label);
+      if (!groups.has(key)) groups.set(key, { driver: label, qty: 0 });
+      groups.get(key).qty += 1;
+    });
+    return Array.from(groups.values())
+      .sort((a, b) => b.qty - a.qty || a.driver.localeCompare(b.driver, 'pt-BR'));
   }
 
   function renderComparison(snapshot, previous) {
@@ -2824,14 +2871,16 @@
         <td>${html(value(row, 'bairro'))}</td>
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
-        <td>${html(row.__file || '')}</td>
       </tr>
-    `).join('') || '<tr><td colspan="8">Nada encontrado com os filtros atuais.</td></tr>';
+    `).join('') || `<tr><td colspan="${actionable ? 8 : 7}">Nada encontrado com os filtros atuais.</td></tr>`;
   }
 
   function renderModalHeader() {
-    const lastColumn = isReceivedActionModal() ? 'Tratativa' : 'Arquivo';
-    els.modalHeader.innerHTML = `<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th><th>${lastColumn}</th>`;
+    if (isReceivedActionModal()) {
+      els.modalHeader.innerHTML = '<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th><th>Tratativa</th>';
+      return;
+    }
+    els.modalHeader.innerHTML = '<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th>';
   }
 
   function isReceivedActionModal() {
@@ -2903,8 +2952,6 @@
       value(row, 'bairro'),
       value(row, 'driverId'),
       value(row, 'driver'),
-      row.__file,
-      row.__sheet,
       row.__txfTratativa || '',
       row.__txfStatusAction || ''
     ].join(' ');
@@ -2935,7 +2982,6 @@
       value(row, 'bairro'),
       value(row, 'driverId'),
       value(row, 'driver'),
-      row.__file || '',
       ...(includeTreatment ? [row.__txfStatusAction || '', row.__txfTratativa || ''] : [])
     ].join('\t')).join('\n');
     navigator.clipboard?.writeText(text);
@@ -3006,7 +3052,7 @@
 
   function downloadRowsCsv(rows, filename) {
     const includeTreatment = rows.some(row => row.__txfTratativa || row.__txfStatusAction);
-    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver', 'Arquivo'].concat(includeTreatment ? ['Ação', 'Tratativa'] : []);
+    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver'].concat(includeTreatment ? ['Ação', 'Tratativa'] : []);
     const body = rows.map(row => [
       value(row, 'tracking'),
       statusOf(row),
@@ -3015,7 +3061,6 @@
       value(row, 'bairro'),
       value(row, 'driverId'),
       value(row, 'driver'),
-      row.__file || '',
       ...(includeTreatment ? [row.__txfStatusAction || '', row.__txfTratativa || ''] : [])
     ]);
     downloadCsv([header, ...body], filename);
