@@ -1978,15 +1978,20 @@
       return;
     }
     const matches = rows.filter(row => low(rowSearchText(row)).includes(query)).slice(0, 80);
-    els.receivedSearchResults.innerHTML = matches.map(row => `
-      <button class="list-row" type="button" data-open='${html(JSON.stringify({ kind: 'all', tracking: value(row, 'tracking') }))}'>
-        <span>
-          <strong>${html(value(row, 'tracking'))}</strong>
-          <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
-        </span>
-        <b class="severity high">Abrir</b>
-      </button>
-    `).join('') || '<p class="muted">Nenhuma BR em Received encontrada.</p>';
+    els.receivedSearchResults.innerHTML = matches.map(row => {
+      const city = value(row, 'city');
+      const bairro = value(row, 'bairro');
+      const openFilter = { kind: 'Hub_Received', city, bairro };
+      return `
+        <button class="list-row" type="button" data-open='${html(JSON.stringify(openFilter))}'>
+          <span>
+            <strong>${html(value(row, 'tracking'))}</strong>
+            <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(city)} | ${html(bairro)} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
+          </span>
+          <b class="severity high">Abrir grupo</b>
+        </button>
+      `;
+    }).join('') || '<p class="muted">Nenhuma BR em Received encontrada.</p>';
   }
 
   function assignedMonitorRows() {
@@ -2986,7 +2991,12 @@
     });
     els.receivedSearch.addEventListener('input', () => {
       state.receivedMonitor.search = els.receivedSearch.value;
-      renderReceivedMonitor();
+      const rows = receivedMonitorRows().filter(row => {
+        if (state.receivedMonitor.city && value(row, 'city') !== state.receivedMonitor.city) return false;
+        if (state.receivedMonitor.bairro && value(row, 'bairro') !== state.receivedMonitor.bairro) return false;
+        return true;
+      });
+      renderReceivedSearch(rows);
     });
     els.assignedCityFilter.addEventListener('change', () => {
       state.assignedMonitor.city = els.assignedCityFilter.value;
