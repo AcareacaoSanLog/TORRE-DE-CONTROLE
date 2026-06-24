@@ -1268,6 +1268,7 @@
 
   function rowMatches(row, filter) {
     const status = statusOf(row);
+    if (filter.tracking && value(row, 'tracking') !== filter.tracking) return false;
     if (filter.kind === 'notDelivered' && status === 'Delivered') return false;
     if (filter.kind === 'Hub_Received' && !isReceived(status)) return false;
     if (filter.kind === 'Hub_Assigned' && !isAssigned(status)) return false;
@@ -1981,14 +1982,15 @@
     els.receivedSearchResults.innerHTML = matches.map(row => {
       const city = value(row, 'city');
       const bairro = value(row, 'bairro');
-      const openFilter = { kind: 'Hub_Received', city, bairro };
+      const tracking = value(row, 'tracking');
+      const openFilter = { kind: 'Hub_Received', tracking };
       return `
         <button class="list-row" type="button" data-open='${html(JSON.stringify(openFilter))}'>
           <span>
-            <strong>${html(value(row, 'tracking'))}</strong>
+            <strong>${html(tracking)}</strong>
             <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(city)} | ${html(bairro)} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
           </span>
-          <b class="severity high">Abrir grupo</b>
+          <b class="severity high">Abrir BR</b>
         </button>
       `;
     }).join('') || '<p class="muted">Nenhuma BR em Received encontrada.</p>';
@@ -2878,11 +2880,10 @@
       if (openButton) {
         const filter = JSON.parse(openButton.dataset.open);
         if (filter.tracking) {
-          filter.kind = 'all';
           const tracking = filter.tracking;
-          state.currentFilter = filter;
-          state.currentRows = state.rows.filter(row => value(row, 'tracking') === tracking);
-          els.modalTitle.textContent = `Tracking: ${tracking}`;
+          state.currentFilter = { ...filter, kind: filter.kind || 'all' };
+          state.currentRows = filteredRows(state.currentFilter);
+          els.modalTitle.textContent = `BR: ${tracking}`;
           resetModalFilters();
           renderModalFilterOptions();
           renderModalRows();
