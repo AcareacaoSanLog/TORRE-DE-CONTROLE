@@ -20,6 +20,10 @@
   let currentSession = null;
   let appStarted = false;
   let cloudSaveTimer = null;
+  let cloudLoadInProgress = false;
+  let iconRefreshFrame = null;
+  let textRepairPerformed = false;
+  const ACTIVE_VIEW_KEY = 'txf-plus-active-view-v2';
 
   const state = {
     rows: [],
@@ -450,8 +454,10 @@
     els.cloudStatus.className = `cloud-status ${type}`.trim();
   }
 
-  function repairVisibleText(root = document.body) {
+  function repairVisibleText(root = document.body, force = false) {
     if (!root) return;
+    if (textRepairPerformed && !force) return;
+    textRepairPerformed = true;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const tag = node.parentElement?.tagName;
@@ -472,6 +478,33 @@
         if (fixed !== current) element.setAttribute(attr, fixed);
       });
     });
+  }
+
+  function validViewId(id) {
+    const view = document.getElementById(clean(id));
+    return view?.classList?.contains('view') ? view.id : 'dashboard';
+  }
+
+  function activeViewId() {
+    return validViewId(document.querySelector('.view.active')?.id || 'dashboard');
+  }
+
+  function readSavedViewId() {
+    try {
+      return validViewId(sessionStorage.getItem(ACTIVE_VIEW_KEY) || localStorage.getItem(ACTIVE_VIEW_KEY) || 'dashboard');
+    } catch (error) {
+      return 'dashboard';
+    }
+  }
+
+  function rememberViewId(id) {
+    const viewId = validViewId(id);
+    try {
+      sessionStorage.setItem(ACTIVE_VIEW_KEY, viewId);
+      localStorage.setItem(ACTIVE_VIEW_KEY, viewId);
+    } catch (error) {
+      console.warn('rememberViewId', error);
+    }
   }
 
   function clearSessionData() {
@@ -790,6 +823,9 @@
       if (!options.silent) setCloudStatus('Nuvem: entre com login para carregar.', 'warn');
       return false;
     }
+    if (cloudLoadInProgress) return false;
+    cloudLoadInProgress = true;
+    const viewBeforeLoad = activeViewId();
     if (!options.silent) setCloudStatus('Nuvem: carregando última importação...', 'warn');
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/${CLOUD_TABLE}?id=eq.${encodeURIComponent(CLOUD_ID)}&select=payload,updated_at`, {
@@ -798,18 +834,20 @@
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       if (!data.length) {
-        setCloudStatus('Nuvem: nenhuma importação salva ainda.', 'warn');
+        if (!options.silent) setCloudStatus('Nuvem: nenhuma importação salva ainda.', 'warn');
         return false;
       }
       applyCloudRows(data[0].payload);
       const savedAt = data[0].updated_at || data[0].payload?.savedAt;
       setCloudStatus(`Nuvem: importação carregada de ${new Date(savedAt).toLocaleString('pt-BR')}.`, 'ok');
-      setView('dashboard');
+      setView(options.openDashboard ? 'dashboard' : viewBeforeLoad, { persist: false });
       return true;
     } catch (error) {
       setCloudStatus(options.silent ? 'Nuvem: configure a tabela para carregar dados compartilhados.' : 'Nuvem: não foi possível carregar. Confira a tabela do Supabase.', options.silent ? 'warn' : 'error');
       console.warn('loadCloudState', error);
       return false;
+    } finally {
+      cloudLoadInProgress = false;
     }
   }
 
@@ -3070,17 +3108,20 @@
     els.dropZone.addEventListener('drop', event => handleFiles(event.dataTransfer.files));
   }
 
-  function setView(id) {
-    document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === id));
-    document.querySelectorAll('.nav-button').forEach(button => button.classList.toggle('active', button.dataset.view === id));
+  function setView(id, options = {}) {
+    const nextId = validViewId(id);
+    document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === nextId));
+    document.querySelectorAll('.nav-button').forEach(button => button.classList.toggle('active', button.dataset.view === nextId));
 
-    const active = document.querySelector(`.nav-button[data-view="${id}"] span`);
+    const active = document.querySelector(`.nav-button[data-view="${nextId}"] span`);
     document.getElementById('viewTitle').textContent = active ? active.textContent : 'Dashboard';
-    setToolsOpen(['history', 'search'].includes(id));
-    setMonitoringOpen(['received', 'assigned'].includes(id));
+    setToolsOpen(['history', 'search'].includes(nextId));
+    setMonitoringOpen(['received', 'assigned'].includes(nextId));
     if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0);
-    repairVisibleText();
+    if (options.persist !== false) rememberViewId(nextId);
+    refreshIcons();
   }
+
 
   function toggleTools(force) {
     const shouldOpen = typeof force === 'boolean' ? force : !els.toolsMenu.classList.contains('open');
@@ -3105,12 +3146,19 @@
   }
 
   function refreshIcons() {
-    if (window.lucide) window.lucide.createIcons();
+    if (!window.lucide) return;
+    if (iconRefreshFrame) return;
+    const run = () => {
+      iconRefreshFrame = null;
+      window.lucide.createIcons();
+    };
+    iconRefreshFrame = window.requestAnimationFrame ? window.requestAnimationFrame(run) : window.setTimeout(run, 0);
   }
+
 
   function startApp() {
     if (appStarted) {
-      loadCloudState({ silent: true });
+      setAuthUi(currentSession);
       return;
     }
     appStarted = true;
@@ -3123,10 +3171,12 @@
     els.cepCount.textContent = number(Object.keys(cepMap).length);
     bindEvents();
     renderAll();
-    repairVisibleText();
+    setView(readSavedViewId(), { persist: false });
+    repairVisibleText(document.body, true);
     refreshIcons();
     loadCloudState({ silent: true });
   }
+
 
   async function initAuth() {
     bindAuthEvents();
