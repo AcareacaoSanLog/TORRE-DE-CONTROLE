@@ -860,7 +860,7 @@
     if (x.includes('return_hub_received')) return 'Return_Hub_Received';
     if (x.includes('hub_received') || x === 'received' || x.includes('received')) return 'Hub_Received';
     if (x.includes('hub_assigning')) return 'Hub_Assigning';
-    if (x.includes('hub_assigned')) return 'Hub_Assigned';
+    if (x.includes('hub_assigned') || x.includes('criado at') || x.includes('criado_at')) return 'Hub_Assigned';
     if (x.includes('onhold') || x.includes('on hold') || x.includes('hold')) return 'OnHold';
     if (x.includes('lmhub_packed')) return 'LMHub_Packed';
     if (x.includes('lhtransported')) return 'SOC_LHTransported';
@@ -873,6 +873,10 @@
 
   function isAssigned(status) {
     return ['Hub_Assigned', 'Hub_Assigning'].includes(normalizeStatus(status));
+  }
+
+  function isSocLH(status) {
+    return normalizeStatus(status) === 'SOC_LHTransported';
   }
 
   function trackingKey(value) {
@@ -961,8 +965,9 @@
       const realStatus = normalizeStatus(raw(row, 'status') || row.status || row.__sheet || row.__file);
       if (registryItem.treatment) row.__txfTratativa = registryItem.treatment;
       if (registryItem.statusAction) row.__txfStatusAction = registryItem.statusAction;
-      if (registryItem.statusOverride && isReceived(realStatus)) {
-        row.__txfStatusOverride = registryItem.statusOverride;
+      const registryOverride = registryItem.statusAction === 'Criado AT' ? 'Hub_Assigned' : registryItem.statusOverride;
+      if (registryOverride && (isReceived(realStatus) || isSocLH(realStatus))) {
+        row.__txfStatusOverride = registryOverride;
       }
       row.__txfTreatmentUpdatedAt = registryItem.updatedAt || row.__txfTreatmentUpdatedAt || '';
     });
@@ -1717,6 +1722,8 @@
     const receivedGroups = managerReceivedGroups(rows);
     const assignedGroups = managerAssignedGroups(rows);
     const onHoldGroups = managerOnHoldDriverGroups(rows);
+    const damageGroups = managerDamageStatusGroups(rows);
+    const damageTotal = rows.filter(row => isDamageRow(row)).length;
     const deliveredPct = snapshot.total ? ` (${snapshot.sla.toFixed(2).replace('.', ',')}% do total)` : '';
 
     const receivedText = receivedGroups.length
@@ -1731,6 +1738,10 @@
       ? onHoldGroups.map((item, index) => `${index + 1}. ${item.driver} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
       : 'Sem BR em OnHold no momento.';
 
+    const damageText = damageGroups.length
+      ? damageGroups.map((item, index) => `${index + 1}. ${item.status} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')} | Tratativa: ${item.treatment}`).join('\n')
+      : 'Sem avarias registradas no momento.';
+
     const managerDate = new Date(snapshot.date);
     const managerDateText = managerDate.toLocaleDateString('pt-BR');
     const managerTimeText = managerDate.toLocaleTimeString('pt-BR');
@@ -1742,6 +1753,7 @@
       '🎯 INDICADORES DE META',
       `✅ Delivered: ${number(snapshot.delivered)}${deliveredPct}`,
       `🚚 SOC LH: ${number(snapshot.socLH)} ${plural(snapshot.socLH, 'BR', 'BRs')}`,
+      `⚠️ Avarias: ${number(damageTotal)} ${plural(damageTotal, 'BR', 'BRs')}`,
       '',
       '📦 HUB RECEIVED — CIDADE/BAIRRO, QTD E TRATATIVA',
       receivedText,
@@ -1749,8 +1761,11 @@
       '🧭 HUB ASSIGNED — CIDADE/BAIRRO E QTD',
       assignedText,
       '',
-      '⏸️ ONHOLD — POR ENTREGADOR',
-      onHoldText
+      '⛔ ONHOLD — POR ENTREGADOR',
+      onHoldText,
+      '',
+      '🛠️ AVARIAS — STATUS ATUAL E TRATATIVA',
+      damageText
     ].join('\n');
   }
 
@@ -1797,6 +1812,21 @@
     });
     return Array.from(groups.values())
       .sort((a, b) => b.qty - a.qty || a.driver.localeCompare(b.driver, 'pt-BR'));
+  }
+
+
+  function managerDamageStatusGroups(rows) {
+    const groups = new Map();
+    rows.filter(row => isDamageRow(row)).forEach(row => {
+      const status = statusOf(row);
+      const statusLabel = statusConfig[status]?.label || status || 'Sem status';
+      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || 'Avaria registrada');
+      const key = groupKey([statusLabel, treatment]);
+      if (!groups.has(key)) groups.set(key, { status: statusLabel, treatment, qty: 0 });
+      groups.get(key).qty += 1;
+    });
+    return Array.from(groups.values())
+      .sort((a, b) => b.qty - a.qty || a.status.localeCompare(b.status, 'pt-BR') || a.treatment.localeCompare(b.treatment, 'pt-BR'));
   }
 
   function renderComparison(snapshot, previous) {
@@ -2888,17 +2918,20 @@
   }
 
   function isReceivedActionModal() {
-    return state.currentFilter?.kind === 'Hub_Received';
+    return ['Hub_Received', 'SOC_LHTransported'].includes(state.currentFilter?.kind);
   }
 
   function renderReceivedActionRow(row) {
-    const receivedLabel = isDamageRow(row) ? 'Avaria' : 'Received';
+    const baseKind = state.currentFilter?.kind === 'SOC_LHTransported' || isSocLH(statusOf(row))
+      ? 'SOC_LHTransported'
+      : 'Hub_Received';
+    const baseLabel = isDamageRow(row) ? 'Avaria' : (baseKind === 'SOC_LHTransported' ? 'SOC LH' : 'Received');
     return `
       <tr>
         <td>${html(value(row, 'tracking'))}</td>
         <td>
           <select class="status-action-select" data-status-row="${html(row.__txfRowId || '')}">
-            <option value="Hub_Received" ${row.__txfStatusAction ? '' : 'selected'}>${html(receivedLabel)}</option>
+            <option value="${html(baseKind)}" ${row.__txfStatusAction === 'Criado AT' ? '' : 'selected'}>${html(baseLabel)}</option>
             <option value="Criado AT" ${row.__txfStatusAction === 'Criado AT' ? 'selected' : ''}>Criado AT</option>
           </select>
         </td>
@@ -2919,7 +2952,7 @@
     if (!row) return;
     if (action === 'Criado AT') {
       row.__txfStatusAction = 'Criado AT';
-      row.__txfStatusOverride = 'Delivering';
+      row.__txfStatusOverride = 'Hub_Assigned';
       if (!row.__txfTratativa) row.__txfTratativa = 'Criado AT';
     } else {
       row.__txfStatusAction = '';
