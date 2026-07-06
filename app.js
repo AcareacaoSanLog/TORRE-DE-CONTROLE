@@ -1319,7 +1319,8 @@
     if (filter.kind === 'notDelivered' && status === 'Delivered') return false;
     if (filter.kind === 'Hub_Received' && !isReceived(status)) return false;
     if (filter.kind === 'Hub_Assigned' && !isAssigned(status)) return false;
-    if (filter.kind && !['all', 'notDelivered', 'Hub_Received', 'Hub_Assigned'].includes(filter.kind) && status !== filter.kind) return false;
+    if (filter.kind === 'Avaria' && !isDamageRow(row)) return false;
+    if (filter.kind && !['all', 'notDelivered', 'Hub_Received', 'Hub_Assigned', 'Avaria'].includes(filter.kind) && status !== filter.kind) return false;
     if (filter.city && value(row, 'city') !== filter.city) return false;
     if (filter.bairro && value(row, 'bairro') !== filter.bairro) return false;
     if (filter.driver && value(row, 'driver') !== filter.driver) return false;
@@ -1395,6 +1396,7 @@
       assigned: 0,
       socLH: 0,
       hold: 0,
+      damage: 0,
       byReceived: new Map(),
       byAssigned: new Map(),
       byAssignedCity: new Map(),
@@ -1416,6 +1418,7 @@
       const cityBairro = groupKey([city, bairro]);
       const pending = status !== 'Delivered';
       const region = regionOf(city);
+      if (isDamageRow(row)) stats.damage += 1;
 
       if (status === 'Delivered') {
         stats.delivered += 1;
@@ -1496,7 +1499,8 @@
       ['Assigned', stats.assigned, 'Atribuídos no hub', 'Hub_Assigned'],
       ['Delivering', stats.delivering, 'Em rota', 'Delivering'],
       ['SOC LH', stats.socLH, 'Transportado no line haul', 'SOC_LHTransported'],
-      ['OnHold', stats.hold, percent(stats.hold, stats.total), 'OnHold']
+      ['OnHold', stats.hold, percent(stats.hold, stats.total), 'OnHold'],
+      ['Avarias', stats.damage, 'BRs com avaria no dia', 'Avaria']
     ];
     els.kpis.innerHTML = items.map(([label, qty, hint, filter]) => `
       <article class="kpi">
@@ -1629,7 +1633,8 @@
       SOC_LHTransported: 'SOC LH',
       Hub_Received: 'Received - tratativa',
       Hub_Assigned: 'Hub Assigned',
-      OnHold: 'OnHold'
+      OnHold: 'OnHold',
+      Avaria: 'Avarias do dia'
     }[kind] || `Detalhes: ${kind}`;
   }
 
@@ -3114,7 +3119,11 @@
     els.modalSubtitle.textContent = `${number(filteredRows.length)} de ${number(state.currentRows.length)} pacotes encontrados`;
     const rows = filteredRows.slice(0, 1500);
     const actionable = isReceivedActionModal();
-    els.modalRows.innerHTML = rows.map(row => actionable ? renderReceivedActionRow(row) : `
+    const damageDetail = isDamageDetailModal();
+    els.modalRows.innerHTML = rows.map(row => {
+      if (actionable) return renderReceivedActionRow(row);
+      if (damageDetail) return renderDamageDetailRow(row);
+      return `
       <tr>
         <td>${html(value(row, 'tracking'))}</td>
         <td>${statusPill(displayStatusOf(row))}</td>
@@ -3124,11 +3133,12 @@
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
       </tr>
-    `).join('') || `<tr><td colspan="${actionable ? 8 : 7}">Nada encontrado com os filtros atuais.</td></tr>`;
+    `;
+    }).join('') || `<tr><td colspan="${actionable || damageDetail ? 8 : 7}">Nada encontrado com os filtros atuais.</td></tr>`;
   }
 
   function renderModalHeader() {
-    if (isReceivedActionModal()) {
+    if (isReceivedActionModal() || isDamageDetailModal()) {
       els.modalHeader.innerHTML = '<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th><th>Tratativa</th>';
       return;
     }
@@ -3137,6 +3147,25 @@
 
   function isReceivedActionModal() {
     return ['Hub_Received', 'SOC_LHTransported'].includes(state.currentFilter?.kind);
+  }
+
+  function isDamageDetailModal() {
+    return state.currentFilter?.kind === 'Avaria';
+  }
+
+  function renderDamageDetailRow(row) {
+    return `
+      <tr>
+        <td>${html(value(row, 'tracking'))}</td>
+        <td>${statusPill(statusOf(row))}</td>
+        <td>${html(cepOf(row))}</td>
+        <td>${html(value(row, 'city'))}</td>
+        <td>${html(value(row, 'bairro'))}</td>
+        <td>${html(value(row, 'driverId'))}</td>
+        <td>${html(value(row, 'driver'))}</td>
+        <td>${html(row.__txfTratativa || 'Avaria registrada')}</td>
+      </tr>
+    `;
   }
 
   function renderReceivedActionRow(row) {
