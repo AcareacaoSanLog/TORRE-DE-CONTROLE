@@ -74,6 +74,19 @@
       sort: 'desc',
       search: ''
     },
+    socLhMonitor: {
+      city: '',
+      bairro: '',
+      sort: 'desc',
+      search: ''
+    },
+    onHoldMonitor: {
+      city: '',
+      bairro: '',
+      driver: '',
+      sort: 'desc',
+      search: ''
+    },
     issues: []
   };
 
@@ -119,6 +132,19 @@
     assignedSort: document.getElementById('assignedSort'),
     assignedSearch: document.getElementById('assignedSearch'),
     assignedSearchResults: document.getElementById('assignedSearchResults'),
+    socLhTable: document.getElementById('socLhTable'),
+    socLhCityFilter: document.getElementById('socLhCityFilter'),
+    socLhBairroFilter: document.getElementById('socLhBairroFilter'),
+    socLhSort: document.getElementById('socLhSort'),
+    socLhSearch: document.getElementById('socLhSearch'),
+    socLhSearchResults: document.getElementById('socLhSearchResults'),
+    onHoldTable: document.getElementById('onHoldTable'),
+    onHoldCityFilter: document.getElementById('onHoldCityFilter'),
+    onHoldBairroFilter: document.getElementById('onHoldBairroFilter'),
+    onHoldDriverFilter: document.getElementById('onHoldDriverFilter'),
+    onHoldSort: document.getElementById('onHoldSort'),
+    onHoldSearch: document.getElementById('onHoldSearch'),
+    onHoldSearchResults: document.getElementById('onHoldSearchResults'),
     damageForm: document.getElementById('damageForm'),
     damageTracking: document.getElementById('damageTracking'),
     damageBulkTrackings: document.getElementById('damageBulkTrackings'),
@@ -533,6 +559,8 @@
     state.filters = { status: '', city: '', driver: '', scope: '' };
     state.receivedMonitor = { city: '', bairro: '', sort: 'desc', search: '' };
     state.assignedMonitor = { city: '', bairro: '', sort: 'desc', search: '' };
+    state.socLhMonitor = { city: '', bairro: '', sort: 'desc', search: '' };
+    state.onHoldMonitor = { city: '', bairro: '', driver: '', sort: 'desc', search: '' };
     state.issues = [];
     try {
       sessionStorage.removeItem(HISTORY_KEY);
@@ -854,7 +882,18 @@
 
   function normalizeStatus(value) {
     const x = low(value);
+    const plain = removeAccents(clean(value)).toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
     if (!x) return '(vazio)';
+    if (
+      x.includes('lhtransported') ||
+      x.includes('lh_transported') ||
+      x.includes('soc_lh') ||
+      x.includes('soc-lh') ||
+      plain.includes('soc lh') ||
+      plain.includes('line haul') ||
+      plain.includes('lh transported') ||
+      plain.includes('transportado no line haul')
+    ) return 'SOC_LHTransported';
     if (x.includes('delivered') || x.includes('entregue')) return 'Delivered';
     if (x.includes('delivering') || x.includes('em rota')) return 'Delivering';
     if (x.includes('return_hub_received')) return 'Return_Hub_Received';
@@ -863,7 +902,6 @@
     if (x.includes('hub_assigned') || x.includes('criado at') || x.includes('criado_at')) return 'Hub_Assigned';
     if (x.includes('onhold') || x.includes('on hold') || x.includes('hold')) return 'OnHold';
     if (x.includes('lmhub_packed')) return 'LMHub_Packed';
-    if (x.includes('lhtransported')) return 'SOC_LHTransported';
     return clean(value);
   }
 
@@ -877,6 +915,10 @@
 
   function isSocLH(status) {
     return normalizeStatus(status) === 'SOC_LHTransported';
+  }
+
+  function isOnHold(status) {
+    return normalizeStatus(status) === 'OnHold';
   }
 
   function trackingKey(value) {
@@ -1306,6 +1348,16 @@
     const driver = value(row, 'driver');
     if (state.filters.status === 'notDelivered' && status === 'Delivered') return false;
     if (state.filters.status && state.filters.status !== 'notDelivered' && status !== state.filters.status) return false;
+    if (state.filters.city && city !== state.filters.city) return false;
+    if (state.filters.driver && driver !== state.filters.driver) return false;
+    if (state.filters.scope === 'teixeira' && !isTeixeiraCity(city)) return false;
+    if (state.filters.scope === 'interior' && !isInteriorScopeCity(city)) return false;
+    return true;
+  }
+
+  function monitorFilterMatches(row) {
+    const city = value(row, 'city');
+    const driver = value(row, 'driver');
     if (state.filters.city && city !== state.filters.city) return false;
     if (state.filters.driver && driver !== state.filters.driver) return false;
     if (state.filters.scope === 'teixeira' && !isTeixeiraCity(city)) return false;
@@ -1994,7 +2046,7 @@
   }
 
   function receivedMonitorRows() {
-    return visibleRows().filter(row => isReceived(statusOf(row)));
+    return state.rows.filter(row => monitorFilterMatches(row) && isReceived(statusOf(row)));
   }
 
   function renderReceivedMonitor() {
@@ -2079,7 +2131,7 @@
   }
 
   function assignedMonitorRows() {
-    return visibleRows().filter(row => isAssigned(statusOf(row)));
+    return state.rows.filter(row => monitorFilterMatches(row) && isAssigned(statusOf(row)));
   }
 
   function renderAssignedMonitor() {
@@ -2141,9 +2193,175 @@
     `).join('') || '<p class="muted">Nenhuma BR em Assigned encontrada.</p>';
   }
 
+  function socLhMonitorRows() {
+    return state.rows.filter(row => monitorFilterMatches(row) && isSocLH(statusOf(row)));
+  }
+
+  function renderSocLhMonitor() {
+    const rows = socLhMonitorRows();
+    const cityOptions = Array.from(new Set(rows.map(row => value(row, 'city'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.socLhMonitor.city && !cityOptions.includes(state.socLhMonitor.city)) {
+      state.socLhMonitor.city = '';
+    }
+    fillSelect(els.socLhCityFilter, [['', 'Todas']], cityOptions.map(item => [item, item]), state.socLhMonitor.city);
+
+    const cityRows = rows.filter(row => !state.socLhMonitor.city || value(row, 'city') === state.socLhMonitor.city);
+    const bairroOptions = Array.from(new Set(cityRows.map(row => value(row, 'bairro'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.socLhMonitor.bairro && !bairroOptions.includes(state.socLhMonitor.bairro)) {
+      state.socLhMonitor.bairro = '';
+    }
+    fillSelect(els.socLhBairroFilter, [['', 'Todos']], bairroOptions.map(item => [item, item]), state.socLhMonitor.bairro);
+    els.socLhSort.value = state.socLhMonitor.sort === 'asc' ? 'asc' : 'desc';
+    els.socLhSearch.value = state.socLhMonitor.search || '';
+
+    const filtered = cityRows.filter(row => !state.socLhMonitor.bairro || value(row, 'bairro') === state.socLhMonitor.bairro);
+    const grouped = new Map();
+    filtered.forEach(row => {
+      const key = groupKey([value(row, 'city'), value(row, 'bairro')]);
+      if (!grouped.has(key)) grouped.set(key, { qty: 0, treatments: new Map() });
+      const data = grouped.get(key);
+      data.qty += 1;
+      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || '');
+      if (treatment) data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
+    });
+    const direction = state.socLhMonitor.sort === 'asc' ? 1 : -1;
+
+    els.socLhTable.innerHTML = Array.from(grouped.entries())
+      .map(([key, data]) => {
+        const [city, bairro] = key.split('|');
+        return { city, bairro, qty: data.qty, treatment: formatGroupTreatments(data.treatments) };
+      })
+      .sort((a, b) => (a.qty - b.qty) * direction || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'))
+      .map(item => `<tr class="clickable">
+        <td>${html(item.city)}</td>
+        <td>${html(item.bairro)}</td>
+        <td class="treatment-summary">${html(item.treatment)}</td>
+        <td>${number(item.qty)}</td>
+        <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'SOC_LHTransported', city: item.city, bairro: item.bairro }))}'>Abrir</button></td>
+      </tr>`)
+      .join('') || '<tr><td colspan="5">Nenhum SOC LH encontrado.</td></tr>';
+
+    renderSocLhSearch(filtered);
+  }
+
+  function renderSocLhSearch(rows) {
+    const query = low(state.socLhMonitor.search);
+    if (!query) {
+      els.socLhSearchResults.innerHTML = '';
+      return;
+    }
+    const matches = rows.filter(row => low(rowSearchText(row)).includes(query)).slice(0, 80);
+    els.socLhSearchResults.innerHTML = matches.map(row => {
+      const city = value(row, 'city');
+      const bairro = value(row, 'bairro');
+      const tracking = value(row, 'tracking');
+      const openFilter = { kind: 'SOC_LHTransported', tracking };
+      return `
+        <button class="list-row" type="button" data-open='${html(JSON.stringify(openFilter))}'>
+          <span>
+            <strong>${html(tracking)}</strong>
+            <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(city)} | ${html(bairro)} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
+          </span>
+          <b class="severity normal">Abrir BR</b>
+        </button>
+      `;
+    }).join('') || '<p class="muted">Nenhuma BR em SOC LH encontrada.</p>';
+  }
+
+  function onHoldMonitorRows() {
+    return state.rows.filter(row => monitorFilterMatches(row) && isOnHold(statusOf(row)));
+  }
+
+  function renderOnHoldMonitor() {
+    const rows = onHoldMonitorRows();
+    if (!els.onHoldTable) return;
+
+    const cityOptions = Array.from(new Set(rows.map(row => value(row, 'city'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.onHoldMonitor.city && !cityOptions.includes(state.onHoldMonitor.city)) {
+      state.onHoldMonitor.city = '';
+    }
+    fillSelect(els.onHoldCityFilter, [['', 'Todas']], cityOptions.map(item => [item, item]), state.onHoldMonitor.city);
+
+    const cityRows = rows.filter(row => !state.onHoldMonitor.city || value(row, 'city') === state.onHoldMonitor.city);
+    const bairroOptions = Array.from(new Set(cityRows.map(row => value(row, 'bairro'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.onHoldMonitor.bairro && !bairroOptions.includes(state.onHoldMonitor.bairro)) {
+      state.onHoldMonitor.bairro = '';
+    }
+    fillSelect(els.onHoldBairroFilter, [['', 'Todos']], bairroOptions.map(item => [item, item]), state.onHoldMonitor.bairro);
+
+    const bairroRows = cityRows.filter(row => !state.onHoldMonitor.bairro || value(row, 'bairro') === state.onHoldMonitor.bairro);
+    const driverOptions = Array.from(new Set(bairroRows.map(row => value(row, 'driver'))))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (state.onHoldMonitor.driver && !driverOptions.includes(state.onHoldMonitor.driver)) {
+      state.onHoldMonitor.driver = '';
+    }
+    fillSelect(els.onHoldDriverFilter, [['', 'Todos']], driverOptions.map(item => [item, item]), state.onHoldMonitor.driver);
+
+    els.onHoldSort.value = state.onHoldMonitor.sort === 'asc' ? 'asc' : 'desc';
+    els.onHoldSearch.value = state.onHoldMonitor.search || '';
+
+    const filtered = bairroRows.filter(row => !state.onHoldMonitor.driver || value(row, 'driver') === state.onHoldMonitor.driver);
+    const grouped = new Map();
+    filtered.forEach(row => {
+      const key = groupKey([value(row, 'driver'), value(row, 'city'), value(row, 'bairro')]);
+      if (!grouped.has(key)) grouped.set(key, { qty: 0, treatments: new Map() });
+      const data = grouped.get(key);
+      data.qty += 1;
+      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || '');
+      if (treatment) data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
+    });
+    const direction = state.onHoldMonitor.sort === 'asc' ? 1 : -1;
+
+    els.onHoldTable.innerHTML = Array.from(grouped.entries())
+      .map(([key, data]) => {
+        const [driver, city, bairro] = key.split('|');
+        return { driver, city, bairro, qty: data.qty, treatment: formatGroupTreatments(data.treatments) };
+      })
+      .sort((a, b) => (a.qty - b.qty) * direction || a.driver.localeCompare(b.driver, 'pt-BR') || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'))
+      .map(item => `<tr class="clickable">
+        <td>${html(item.driver)}</td>
+        <td>${html(item.city)}</td>
+        <td>${html(item.bairro)}</td>
+        <td class="treatment-summary">${html(item.treatment)}</td>
+        <td>${number(item.qty)}</td>
+        <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'OnHold', driver: item.driver, city: item.city, bairro: item.bairro }))}'>Abrir</button></td>
+      </tr>`)
+      .join('') || '<tr><td colspan="6">Nenhum OnHold encontrado.</td></tr>';
+
+    renderOnHoldSearch(filtered);
+  }
+
+  function renderOnHoldSearch(rows) {
+    const query = low(state.onHoldMonitor.search);
+    if (!query) {
+      els.onHoldSearchResults.innerHTML = '';
+      return;
+    }
+    const matches = rows.filter(row => low(rowSearchText(row)).includes(query)).slice(0, 80);
+    els.onHoldSearchResults.innerHTML = matches.map(row => {
+      const tracking = value(row, 'tracking');
+      const openFilter = { kind: 'OnHold', tracking };
+      return `
+        <button class="list-row" type="button" data-open='${html(JSON.stringify(openFilter))}'>
+          <span>
+            <strong>${html(tracking)}</strong>
+            <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
+          </span>
+          <b class="severity critical">Abrir BR</b>
+        </button>
+      `;
+    }).join('') || '<p class="muted">Nenhuma BR em OnHold encontrada.</p>';
+  }
+
   function renderTables(stats) {
     renderReceivedMonitor();
     renderAssignedMonitor();
+    renderSocLhMonitor();
+    renderOnHoldMonitor();
 
     els.cityTable.innerHTML = Array.from(stats.byCityStatus.entries()).sort((a, b) => b[1] - a[1]).slice(0, 500).map(([key, qty]) => {
       const [status, city, bairro] = key.split('|');
@@ -2976,6 +3194,8 @@
     }
     rememberTreatment(row);
     renderReceivedMonitor();
+    renderSocLhMonitor();
+    renderOnHoldMonitor();
     if (row.__txfDamage) renderDamageView();
     scheduleCloudSave();
   }
@@ -3272,6 +3492,57 @@
       state.assignedMonitor.search = els.assignedSearch.value;
       renderAssignedMonitor();
     });
+    els.socLhCityFilter.addEventListener('change', () => {
+      state.socLhMonitor.city = els.socLhCityFilter.value;
+      state.socLhMonitor.bairro = '';
+      renderSocLhMonitor();
+    });
+    els.socLhBairroFilter.addEventListener('change', () => {
+      state.socLhMonitor.bairro = els.socLhBairroFilter.value;
+      renderSocLhMonitor();
+    });
+    els.socLhSort.addEventListener('change', () => {
+      state.socLhMonitor.sort = els.socLhSort.value === 'asc' ? 'asc' : 'desc';
+      renderSocLhMonitor();
+    });
+    els.socLhSearch.addEventListener('input', () => {
+      state.socLhMonitor.search = els.socLhSearch.value;
+      const rows = socLhMonitorRows().filter(row => {
+        if (state.socLhMonitor.city && value(row, 'city') !== state.socLhMonitor.city) return false;
+        if (state.socLhMonitor.bairro && value(row, 'bairro') !== state.socLhMonitor.bairro) return false;
+        return true;
+      });
+      renderSocLhSearch(rows);
+    });
+    els.onHoldCityFilter.addEventListener('change', () => {
+      state.onHoldMonitor.city = els.onHoldCityFilter.value;
+      state.onHoldMonitor.bairro = '';
+      state.onHoldMonitor.driver = '';
+      renderOnHoldMonitor();
+    });
+    els.onHoldBairroFilter.addEventListener('change', () => {
+      state.onHoldMonitor.bairro = els.onHoldBairroFilter.value;
+      state.onHoldMonitor.driver = '';
+      renderOnHoldMonitor();
+    });
+    els.onHoldDriverFilter.addEventListener('change', () => {
+      state.onHoldMonitor.driver = els.onHoldDriverFilter.value;
+      renderOnHoldMonitor();
+    });
+    els.onHoldSort.addEventListener('change', () => {
+      state.onHoldMonitor.sort = els.onHoldSort.value === 'asc' ? 'asc' : 'desc';
+      renderOnHoldMonitor();
+    });
+    els.onHoldSearch.addEventListener('input', () => {
+      state.onHoldMonitor.search = els.onHoldSearch.value;
+      const rows = onHoldMonitorRows().filter(row => {
+        if (state.onHoldMonitor.city && value(row, 'city') !== state.onHoldMonitor.city) return false;
+        if (state.onHoldMonitor.bairro && value(row, 'bairro') !== state.onHoldMonitor.bairro) return false;
+        if (state.onHoldMonitor.driver && value(row, 'driver') !== state.onHoldMonitor.driver) return false;
+        return true;
+      });
+      renderOnHoldSearch(rows);
+    });
     els.searchInput.addEventListener('input', renderSearch);
     els.modalSearch.addEventListener('input', () => {
       state.modalFilters.search = els.modalSearch.value;
@@ -3384,7 +3655,7 @@
     const active = document.querySelector(`.nav-button[data-view="${nextId}"] span`);
     document.getElementById('viewTitle').textContent = active ? active.textContent : 'Dashboard';
     setToolsOpen(['history', 'search'].includes(nextId));
-    setMonitoringOpen(['received', 'assigned'].includes(nextId));
+    setMonitoringOpen(['received', 'assigned', 'soc-lh', 'on-hold'].includes(nextId));
     if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0);
     if (options.persist !== false) rememberViewId(nextId);
     refreshIcons();

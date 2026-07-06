@@ -65,6 +65,7 @@
           <button class="nav-button sub" data-view="received"><i data-lucide="package-open"></i><span>📥 Received</span></button>
           <button class="nav-button sub" data-view="assigned"><i data-lucide="tags"></i><span>🏷️ Assigned</span></button>
           <button class="nav-button sub" data-view="soc-lh"><i data-lucide="truck"></i><span>🚚 SOC LH</span></button>
+          <button class="nav-button sub" data-view="on-hold"><i data-lucide="octagon-pause"></i><span>⛔ OnHold</span></button>
         </div>
         <button class="nav-button" data-view="columns"><i data-lucide="columns-3"></i><span>📋 Colunas</span><b id="columnBadge" class="hidden">0</b></button>
         <button class="nav-button" data-view="mission"><i data-lucide="target"></i><span>🎯 Missão do dia</span><b id="missionBadge">0</b></button>
@@ -458,6 +459,39 @@
         </section>
       </section>
 
+      <section class="view" id="on-hold">
+        <section class="panel">
+          <div class="panel-head"><h3>⛔ BRs em OnHold por entregador/cidade/bairro</h3></div>
+          <div class="received-controls onhold-controls">
+            <label>
+              <span>Cidade</span>
+              <select id="onHoldCityFilter"></select>
+            </label>
+            <label>
+              <span>Bairro</span>
+              <select id="onHoldBairroFilter"></select>
+            </label>
+            <label>
+              <span>Entregador</span>
+              <select id="onHoldDriverFilter"></select>
+            </label>
+            <label>
+              <span>Quantidade</span>
+              <select id="onHoldSort">
+                <option value="desc">Maior para menor</option>
+                <option value="asc">Menor para maior</option>
+              </select>
+            </label>
+            <label class="received-search-field">
+              <span>Buscar BR</span>
+              <input id="onHoldSearch" type="search" placeholder="Digite a BR ou tracking">
+            </label>
+          </div>
+          <div class="result-list received-results onhold-results" id="onHoldSearchResults"></div>
+          <div class="table-wrap tall"><table><thead><tr><th>Entregador</th><th>Cidade</th><th>Bairro</th><th>Tratativa</th><th>Qtd</th><th></th></tr></thead><tbody id="onHoldTable"></tbody></table></div>
+        </section>
+      </section>
+
       <section class="view" id="damage">
         <div class="damage-grid">
           <section class="panel">
@@ -593,6 +627,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cep-map.js?v=cep-atualizado-2-0-20260702"></script>
   <script src="driver-db.js"></script>
-  <script src="app.js?v=soc-lh-menu-filtros-20260624"></script>
+  <script src="app.js?v=onhold-monitoramento-filtros-20260706"></script>
 </body>
 </html>
