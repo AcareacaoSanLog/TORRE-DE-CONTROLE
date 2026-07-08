@@ -852,6 +852,7 @@
       treatment: item.treatment || '',
       statusAction: item.statusAction || '',
       statusOverride: item.statusOverride || '',
+      deleted: Boolean(item.deleted),
       updatedAt: item.updatedAt || ''
     }]));
   }
@@ -883,6 +884,154 @@
     persistHistory();
   }
 
+  function registryDateMs(value) {
+    const ms = Date.parse(value || '');
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function normalizeTreatmentRecord(key, item = {}) {
+    const tracking = trackingKey(item.tracking || key);
+    if (!tracking) return null;
+    return {
+      tracking,
+      treatment: clean(item.treatment || item.__txfTratativa || ''),
+      statusAction: clean(item.statusAction || item.__txfStatusAction || ''),
+      statusOverride: clean(item.statusOverride || item.__txfStatusOverride || ''),
+      deleted: Boolean(item.deleted),
+      updatedAt: item.updatedAt || item.__txfTreatmentUpdatedAt || item.createdAt || ''
+    };
+  }
+
+  function treatmentHasPayload(item) {
+    return Boolean(item?.deleted || item?.treatment || item?.statusAction || item?.statusOverride);
+  }
+
+  function mergeTreatmentRecords(current, incoming) {
+    if (!current) return incoming;
+    const currentMs = registryDateMs(current.updatedAt);
+    const incomingMs = registryDateMs(incoming.updatedAt);
+    if (incomingMs > currentMs) {
+      return {
+        tracking: incoming.tracking || current.tracking,
+        treatment: incoming.treatment || '',
+        statusAction: incoming.statusAction || '',
+        statusOverride: incoming.statusOverride || '',
+        deleted: Boolean(incoming.deleted),
+        updatedAt: incoming.updatedAt || current.updatedAt || ''
+      };
+    }
+    if (incomingMs === currentMs && !current.deleted && !incoming.deleted) {
+      return {
+        tracking: current.tracking || incoming.tracking,
+        treatment: current.treatment || incoming.treatment || '',
+        statusAction: current.statusAction || incoming.statusAction || '',
+        statusOverride: current.statusOverride || incoming.statusOverride || '',
+        deleted: false,
+        updatedAt: current.updatedAt || incoming.updatedAt || ''
+      };
+    }
+    return current;
+  }
+
+  function mergeTreatmentRegistries(...registries) {
+    const merged = {};
+    registries.forEach(registry => {
+      Object.entries(registry || {}).forEach(([key, item]) => {
+        const record = normalizeTreatmentRecord(key, item);
+        if (!record || !treatmentHasPayload(record)) return;
+        merged[record.tracking] = mergeTreatmentRecords(merged[record.tracking], record);
+      });
+    });
+    return merged;
+  }
+
+  function normalizeDamageRecord(key, item = {}) {
+    const tracking = trackingKey(item.tracking || key);
+    if (!tracking) return null;
+    return {
+      tracking,
+      cep: normalizeCepDigits(item.cep || ''),
+      city: clean(item.city || ''),
+      bairro: clean(item.bairro || ''),
+      treatment: clean(item.treatment || 'Avaria registrada'),
+      createdAt: item.createdAt || item.updatedAt || ''
+    };
+  }
+
+  function mergeDamageRegistries(...registries) {
+    const merged = {};
+    registries.forEach(registry => {
+      Object.entries(registry || {}).forEach(([key, item]) => {
+        const record = normalizeDamageRecord(key, item);
+        if (!record) return;
+        const current = merged[record.tracking];
+        if (!current || registryDateMs(record.createdAt) >= registryDateMs(current.createdAt)) {
+          merged[record.tracking] = {
+            ...current,
+            ...record,
+            cep: record.cep || current?.cep || '',
+            city: record.city || current?.city || '',
+            bairro: record.bairro || current?.bairro || '',
+            treatment: record.treatment || current?.treatment || 'Avaria registrada',
+            createdAt: record.createdAt || current?.createdAt || ''
+          };
+        }
+      });
+    });
+    return merged;
+  }
+
+  function mergeManualCepRegistries(...registries) {
+    return normalizeManualCepRegistry(Object.assign({}, ...registries.map(registry => registry || {})));
+  }
+
+  async function fetchLatestCloudPayload() {
+    if (!currentSession?.access_token || !supabaseClient) return null;
+    const { data, error } = await supabaseClient
+      .from(CLOUD_TABLE)
+      .select('payload,updated_at')
+      .eq('id', CLOUD_ID)
+      .limit(1);
+    if (error) throw error;
+    return Array.isArray(data) && data.length ? data[0].payload : null;
+  }
+
+  function mergeProtectedDataFromPayload(payload, options = {}) {
+    if (!payload) return false;
+    const cloudRows = Array.isArray(payload.rows) ? payload.rows : [];
+    const remoteTreatments = mergeTreatmentRegistries(
+      buildTreatmentRegistryFromRows(cloudRows),
+      payload.treatmentRegistry || {}
+    );
+    state.treatmentRegistry = mergeTreatmentRegistries(remoteTreatments, state.treatmentRegistry || {});
+    state.damageRegistry = mergeDamageRegistries(
+      buildDamageRegistryFromRows(cloudRows),
+      payload.damageRegistry || {},
+      state.damageRegistry || {}
+    );
+    state.manualCepRegistry = mergeManualCepRegistries(payload.manualCepRegistry || {}, state.manualCepRegistry || {});
+    persistManualCepRegistry();
+    if (options.applyToRows && state.rows.length) {
+      applyManualCepRegistryToRows();
+      applyDamageRegistryToRows();
+      applyTreatmentRegistryToRows();
+    }
+    return true;
+  }
+
+  async function syncProtectedDataFromCloud(options = {}) {
+    if (!currentSession?.access_token || !supabaseClient) return true;
+    try {
+      const payload = await fetchLatestCloudPayload();
+      if (payload) mergeProtectedDataFromPayload(payload, options);
+      return true;
+    } catch (error) {
+      console.warn('syncProtectedDataFromCloud', error);
+      if (!options.silent) setCloudStatus('Nuvem: não foi possível sincronizar tratativas antes de salvar.', 'error');
+      return false;
+    }
+  }
+
   function applyCloudRows(payload) {
     const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     state.rows = rows;
@@ -897,16 +1046,18 @@
       driver: 'driver'
     };
     state.columns = { ...state.detectedColumns };
-    state.damageRegistry = payload?.damageRegistry || buildDamageRegistryFromRows(rows);
-    state.manualCepRegistry = normalizeManualCepRegistry({
-      ...(state.manualCepRegistry || {}),
-      ...(payload?.manualCepRegistry || {})
-    });
+    state.damageRegistry = mergeDamageRegistries(
+      buildDamageRegistryFromRows(rows),
+      payload?.damageRegistry || {},
+      state.damageRegistry || {}
+    );
+    state.manualCepRegistry = mergeManualCepRegistries(payload?.manualCepRegistry || {}, state.manualCepRegistry || {});
     persistManualCepRegistry();
-    state.treatmentRegistry = {
-      ...buildTreatmentRegistryFromRows(rows),
-      ...(payload?.treatmentRegistry || {})
-    };
+    state.treatmentRegistry = mergeTreatmentRegistries(
+      buildTreatmentRegistryFromRows(rows),
+      payload?.treatmentRegistry || {},
+      state.treatmentRegistry || {}
+    );
     state.importFiles = Array.isArray(payload?.files) ? payload.files : ['importação salva na nuvem'];
     state.importId = `cloud-${payload?.savedAt || Date.now()}`;
     state.routeCities = [];
@@ -945,8 +1096,16 @@
       return false;
     }
 
+    captureTreatmentRegistryFromRows();
+    setCloudStatus('Nuvem: sincronizando tratativas antes de salvar...', 'warn');
+    const canProtectSave = await syncProtectedDataFromCloud({ silent: true, applyToRows: true });
+    if (!canProtectSave) {
+      setCloudStatus('Nuvem: salvamento cancelado para evitar perda de tratativas. Tente novamente.', 'error');
+      return false;
+    }
+
     const payload = {
-      version: 1,
+      version: 2,
       savedAt: new Date().toISOString(),
       files: state.importFiles.slice(),
       rows: normalizedCloudRows(),
@@ -1119,7 +1278,14 @@
     const statusAction = row.__txfStatusAction || '';
     const statusOverride = row.__txfStatusOverride || '';
     if (!treatment && !statusAction && !statusOverride) {
-      delete state.treatmentRegistry[key];
+      state.treatmentRegistry[key] = {
+        tracking: key,
+        treatment: '',
+        statusAction: '',
+        statusOverride: '',
+        deleted: true,
+        updatedAt: new Date().toISOString()
+      };
       return;
     }
     state.treatmentRegistry[key] = {
@@ -1127,6 +1293,7 @@
       treatment,
       statusAction,
       statusOverride,
+      deleted: false,
       updatedAt: new Date().toISOString()
     };
   }
@@ -1142,6 +1309,13 @@
       const registryItem = state.treatmentRegistry[trackingKey(value(row, 'tracking'))];
       if (!registryItem) return;
       const realStatus = normalizeStatus(raw(row, 'status') || row.status || row.__sheet || row.__file);
+      if (registryItem.deleted) {
+        row.__txfTratativa = '';
+        row.__txfStatusAction = '';
+        row.__txfStatusOverride = '';
+        row.__txfTreatmentUpdatedAt = registryItem.updatedAt || row.__txfTreatmentUpdatedAt || '';
+        return;
+      }
       if (registryItem.treatment) row.__txfTratativa = registryItem.treatment;
       if (registryItem.statusAction) row.__txfStatusAction = registryItem.statusAction;
       const registryOverride = registryItem.statusAction === 'Criado AT' ? 'Hub_Assigned' : registryItem.statusOverride;
@@ -3149,6 +3323,8 @@
       state.headers = detectHeaders(allRows);
       state.detectedColumns = detectColumns(allRows);
       state.columns = { ...state.detectedColumns };
+      setCloudStatus('Importação: sincronizando tratativas salvas...', 'warn');
+      await syncProtectedDataFromCloud({ silent: true, applyToRows: false });
       applyManualCepRegistryToRows();
       applyDamageRegistryToRows();
       applyTreatmentRegistryToRows();
