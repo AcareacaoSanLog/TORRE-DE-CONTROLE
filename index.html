@@ -16,7 +16,7 @@
       } catch (error) {}
     }());
   </script>
-  <link rel="stylesheet" href="styles.css?v=stable-20260624">
+  <link rel="stylesheet" href="styles.css?v=otimizado-20260707?v=cep-manual-cidades-20260706">
 </head>
 <body class="auth-locked auth-checking">
   <section class="auth-screen" id="authScreen">
@@ -536,6 +536,39 @@
       </section>
 
       <section class="view" id="cities">
+        <div class="grid-2">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>➕ Adicionar CEP manual</h3>
+              <small>Use quando a BR estiver sem cidade/bairro.</small>
+            </div>
+            <form class="damage-form" id="manualCepForm">
+              <label>
+                <span>CEP</span>
+                <input id="manualCepInput" type="text" inputmode="numeric" maxlength="9" placeholder="Ex.: 45920000" required>
+              </label>
+              <label>
+                <span>Cidade</span>
+                <input id="manualCepCity" type="text" placeholder="Ex.: Nova Viçosa" required>
+              </label>
+              <label>
+                <span>Bairro</span>
+                <input id="manualCepBairro" type="text" placeholder="Ex.: Centro" required>
+              </label>
+              <button class="import-button" type="submit">Salvar CEP</button>
+              <p class="muted" id="manualCepMessage">Os CEPs adicionados aqui ficam salvos na nuvem junto com o dashboard.</p>
+            </form>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>🗂️ CEPs adicionados manualmente</h3>
+              <small id="manualCepCount">0 cadastrados</small>
+            </div>
+            <div class="table-wrap"><table><thead><tr><th>CEP</th><th>Cidade</th><th>Bairro</th><th></th></tr></thead><tbody id="manualCepTable"></tbody></table></div>
+          </section>
+        </div>
+
         <section class="panel">
           <div class="panel-head"><h3>📍 Status por cidade/bairro</h3></div>
           <div class="table-wrap tall"><table><thead><tr><th>Status</th><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="cityTable"></tbody></table></div>
@@ -627,6 +660,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cep-map.js?v=cep-atualizado-2-0-20260702"></script>
   <script src="driver-db.js"></script>
-  <script src="app.js?v=dashboard-avarias-20260706"></script>
+  <script src="app.js?v=otimizado-sem-lentidao-20260707"></script>
 </body>
 </html>

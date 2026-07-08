@@ -50,6 +50,7 @@
     history: [],
     damageRegistry: {},
     treatmentRegistry: {},
+    manualCepRegistry: {},
     routeCity: '',
     routeCities: [],
     routeViewMode: 'grid',
@@ -165,6 +166,13 @@
     routeCityTable: document.getElementById('routeCityTable'),
     copyRouteBtn: document.getElementById('copyRouteBtn'),
     cityTable: document.getElementById('cityTable'),
+    manualCepForm: document.getElementById('manualCepForm'),
+    manualCepInput: document.getElementById('manualCepInput'),
+    manualCepCity: document.getElementById('manualCepCity'),
+    manualCepBairro: document.getElementById('manualCepBairro'),
+    manualCepMessage: document.getElementById('manualCepMessage'),
+    manualCepCount: document.getElementById('manualCepCount'),
+    manualCepTable: document.getElementById('manualCepTable'),
     driverTable: document.getElementById('driverTable'),
     searchInput: document.getElementById('searchInput'),
     searchResults: document.getElementById('searchResults'),
@@ -221,6 +229,7 @@
   };
 
   const HISTORY_KEY = 'txf-plus-import-history-v1';
+  const MANUAL_CEP_KEY = 'txf-plus-manual-cep-registry-v1';
 
   const HISTORY_LIMIT = 120;
 
@@ -373,6 +382,127 @@
 
   function persistHistory() {
     sessionStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(0, HISTORY_LIMIT)));
+  }
+
+  function normalizeCepDigits(value) {
+    const digits = clean(value).replace(/\D/g, '');
+    return digits ? digits.padStart(8, '0').slice(-8) : '';
+  }
+
+  function normalizeManualCepRegistry(registry) {
+    return Object.fromEntries(Object.entries(registry || {}).map(([cep, item]) => {
+      const digits = normalizeCepDigits(cep || item?.cep);
+      if (!digits) return null;
+      return [digits, {
+        cep: digits,
+        cidade: clean(item?.cidade || item?.city),
+        bairro: clean(item?.bairro || item?.district),
+        createdAt: item?.createdAt || new Date().toISOString(),
+        updatedAt: item?.updatedAt || item?.createdAt || new Date().toISOString()
+      }];
+    }).filter(Boolean).filter(([, item]) => item.cidade || item.bairro));
+  }
+
+  function loadManualCepRegistry() {
+    try {
+      state.manualCepRegistry = normalizeManualCepRegistry(JSON.parse(localStorage.getItem(MANUAL_CEP_KEY) || '{}'));
+    } catch (error) {
+      state.manualCepRegistry = {};
+    }
+  }
+
+  function persistManualCepRegistry() {
+    localStorage.setItem(MANUAL_CEP_KEY, JSON.stringify(normalizedManualCepRegistry()));
+  }
+
+  function normalizedManualCepRegistry() {
+    return normalizeManualCepRegistry(state.manualCepRegistry);
+  }
+
+  function cepEntry(cep) {
+    const digits = normalizeCepDigits(cep);
+    if (!digits) return null;
+    return state.manualCepRegistry?.[digits] || cepMap[digits] || null;
+  }
+
+  function manualCepEntries() {
+    return Object.values(normalizedManualCepRegistry())
+      .sort((a, b) => a.cidade.localeCompare(b.cidade, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR') || a.cep.localeCompare(b.cep));
+  }
+
+  function effectiveCepCount() {
+    return new Set(Object.keys(cepMap || {}).concat(Object.keys(state.manualCepRegistry || {}))).size;
+  }
+
+  function refreshCepCount() {
+    if (els.cepCount) els.cepCount.textContent = number(effectiveCepCount());
+  }
+
+  function setManualCepMessage(message, type = '') {
+    if (!els.manualCepMessage) return;
+    els.manualCepMessage.textContent = message;
+    els.manualCepMessage.className = type ? `muted ${type}` : 'muted';
+  }
+
+  function applyManualCepRegistryToRows() {
+    if (!state.rows.length) return;
+    state.rows.forEach(row => {
+      const entry = state.manualCepRegistry?.[cepOf(row)];
+      if (!entry) return;
+      if (entry.cidade) row.city = entry.cidade;
+      if (entry.bairro) row.bairro = entry.bairro;
+    });
+  }
+
+  function renderManualCepRegistry() {
+    const entries = manualCepEntries();
+    if (els.manualCepCount) els.manualCepCount.textContent = `${number(entries.length)} ${plural(entries.length, 'cadastrado', 'cadastrados')}`;
+    if (!els.manualCepTable) return;
+    els.manualCepTable.innerHTML = entries.map(item => `
+      <tr>
+        <td>${html(item.cep)}</td>
+        <td>${html(item.cidade)}</td>
+        <td>${html(item.bairro)}</td>
+        <td><button class="mini-button" type="button" data-delete-cep="${html(item.cep)}">Remover</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="4">Nenhum CEP manual cadastrado.</td></tr>';
+  }
+
+  function addManualCepEntry(event) {
+    event.preventDefault();
+    const cep = normalizeCepDigits(els.manualCepInput?.value);
+    const cidade = clean(els.manualCepCity?.value);
+    const bairro = clean(els.manualCepBairro?.value);
+    if (!cep || !cidade || !bairro) {
+      setManualCepMessage('Preencha CEP, cidade e bairro para salvar.', 'warn');
+      return;
+    }
+    state.manualCepRegistry[cep] = {
+      cep,
+      cidade,
+      bairro,
+      createdAt: state.manualCepRegistry[cep]?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    persistManualCepRegistry();
+    applyManualCepRegistryToRows();
+    if (els.manualCepInput) els.manualCepInput.value = '';
+    if (els.manualCepCity) els.manualCepCity.value = '';
+    if (els.manualCepBairro) els.manualCepBairro.value = '';
+    setManualCepMessage(`CEP ${cep} salvo para ${cidade} / ${bairro}.`, 'ok');
+    renderAll();
+    if (state.rows.length) scheduleCloudSave(700);
+    else setCloudStatus('CEP salvo neste navegador. Ele será salvo na nuvem após existir uma importação carregada.', 'warn');
+  }
+
+  function removeManualCepEntry(cep) {
+    const digits = normalizeCepDigits(cep);
+    if (!digits || !state.manualCepRegistry[digits]) return;
+    delete state.manualCepRegistry[digits];
+    persistManualCepRegistry();
+    setManualCepMessage(`CEP ${digits} removido da lista manual.`, 'warn');
+    renderAll();
+    if (state.rows.length) scheduleCloudSave(700);
   }
 
   function previousSnapshot() {
@@ -768,6 +898,11 @@
     };
     state.columns = { ...state.detectedColumns };
     state.damageRegistry = payload?.damageRegistry || buildDamageRegistryFromRows(rows);
+    state.manualCepRegistry = normalizeManualCepRegistry({
+      ...(state.manualCepRegistry || {}),
+      ...(payload?.manualCepRegistry || {})
+    });
+    persistManualCepRegistry();
     state.treatmentRegistry = {
       ...buildTreatmentRegistryFromRows(rows),
       ...(payload?.treatmentRegistry || {})
@@ -779,6 +914,7 @@
     state.routeSelectionTouched = false;
     applyHistoryFromCloud(payload?.history);
     ensureRowIds();
+    applyManualCepRegistryToRows();
     applyDamageRegistryToRows();
     applyTreatmentRegistryToRows();
     clearFilters();
@@ -816,6 +952,7 @@
       rows: normalizedCloudRows(),
       damageRegistry: normalizedDamageRegistry(),
       treatmentRegistry: normalizedTreatmentRegistry(),
+      manualCepRegistry: normalizedManualCepRegistry(),
       history: normalizedHistory()
     };
 
@@ -1071,7 +1208,7 @@
     const missingCep = state.rows.filter(row => !cepOf(row)).length;
     const unmappedCep = state.rows.filter(row => {
       const cep = cepOf(row);
-      return cep && !cepMap[cep] && (!raw(row, 'city') || !raw(row, 'bairro'));
+      return cep && !cepEntry(cep) && (!raw(row, 'city') || !raw(row, 'bairro'));
     }).length;
     const missingTracking = state.rows.filter(row => !raw(row, 'tracking')).length;
     const missingDriver = state.rows.filter(row => value(row, 'driver') === 'Sem driver').length;
@@ -1115,7 +1252,7 @@
       }
       if (!cep) {
         issues.push({ type: 'CEP vazio', title: tracking, detail: `${status} | ${driver}`, filter: { tracking } });
-      } else if (!cepMap[cep] && (!raw(row, 'city') || !raw(row, 'bairro'))) {
+      } else if (!cepEntry(cep) && (!raw(row, 'city') || !raw(row, 'bairro'))) {
         issues.push({ type: 'CEP sem mapa', title: cep, detail: `${tracking} | ${city}`, filter: { tracking } });
       }
       if (value(row, 'driver') === 'Sem driver') {
@@ -1284,9 +1421,14 @@
 
   function value(row, type) {
     if (type === 'city' || type === 'bairro') {
-      const mapped = cepMap[cepOf(row)] || {};
+      const cep = cepOf(row);
+      const mapped = cepEntry(cep) || {};
       const fallback = type === 'city' ? 'Sem cidade' : 'Sem bairro';
-      return raw(row, type) || mapped[type === 'city' ? 'cidade' : 'bairro'] || fallback;
+      const mappedValue = mapped[type === 'city' ? 'cidade' : 'bairro'] || '';
+      const rawValue = raw(row, type);
+      if (state.manualCepRegistry?.[cep] && mappedValue) return mappedValue;
+      if (rawValue && rawValue !== fallback) return rawValue;
+      return mappedValue || rawValue || fallback;
     }
     if (type === 'driver') return driverInfo(row).name;
     if (type === 'driverId') return driverInfo(row).id || 'Sem ID';
@@ -2363,10 +2505,11 @@
   }
 
   function renderTables(stats) {
-    renderReceivedMonitor();
-    renderAssignedMonitor();
-    renderSocLhMonitor();
-    renderOnHoldMonitor();
+    const active = activeViewId();
+    if (active === 'received') renderReceivedMonitor();
+    else if (active === 'assigned') renderAssignedMonitor();
+    else if (active === 'soc-lh') renderSocLhMonitor();
+    else if (active === 'on-hold') renderOnHoldMonitor();
 
     els.cityTable.innerHTML = Array.from(stats.byCityStatus.entries()).sort((a, b) => b[1] - a[1]).slice(0, 500).map(([key, qty]) => {
       const [status, city, bairro] = key.split('|');
@@ -2395,8 +2538,8 @@
   }
 
   function cepLookup(cep) {
-    const digits = clean(cep).replace(/\D/g, '').padStart(8, '0').slice(-8);
-    const mapped = cepMap[digits] || {};
+    const digits = normalizeCepDigits(cep);
+    const mapped = cepEntry(digits) || {};
     return {
       cep: digits,
       city: mapped.cidade || 'Sem cidade',
@@ -2550,7 +2693,7 @@
     els.damageStats.innerHTML = `
       <span><b>${number(receivedDamage)}</b><small>Avarias em Received</small></span>
       <span><b>${topCity ? html(topCity[0]) : '-'}</b><small>Top cidade</small></span>
-      <span><b>${number(rows.filter(row => !cepMap[cepOf(row)]).length)}</b><small>CEPs sem mapa</small></span>
+      <span><b>${number(rows.filter(row => !cepEntry(cepOf(row))).length)}</b><small>CEPs sem mapa</small></span>
     `;
     els.damageTable.innerHTML = rows.map(row => `
       <tr>
@@ -2781,16 +2924,19 @@
     renderManager(stats);
     renderHistory();
     renderQuality();
+    refreshCepCount();
+    renderManualCepRegistry();
     renderTables(stats);
     renderDamageView();
     renderRouteCalculator();
 
-    renderSearch();
-    const activeView = document.querySelector('.view.active')?.id;
+    if (activeViewId() === 'search') renderSearch();
     els.emptyState.classList.toggle('hidden', stats.total > 0);
     els.lastUpdate.textContent = stats.total ? new Date().toLocaleString('pt-BR') : 'Aguardando importação';
-    repairVisibleText();
-    refreshIcons();
+    runWhenIdle(() => {
+      repairVisibleText();
+      refreshIcons();
+    }, 500);
   }
 
   function nextFrame() {
@@ -2806,6 +2952,26 @@
       else setTimeout(resolve, 0);
     });
   }
+
+  function debounce(fn, delay = 180) {
+    let timer = null;
+    return (...args) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => fn(...args), delay);
+    };
+  }
+
+  function runWhenIdle(fn, timeout = 350) {
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(() => fn(), { timeout });
+      return;
+    }
+    window.setTimeout(fn, 0);
+  }
+
+  const debouncedGlobalSearch = debounce(() => renderSearch(), 160);
+  const debouncedModalSearch = debounce(() => renderModalRows(), 160);
+  const debouncedDamagePreview = debounce(() => updateDamagePreview(), 140);
 
   function setImportBusy(isBusy, message = '') {
     importInProgress = isBusy;
@@ -2983,6 +3149,7 @@
       state.headers = detectHeaders(allRows);
       state.detectedColumns = detectColumns(allRows);
       state.columns = { ...state.detectedColumns };
+      applyManualCepRegistryToRows();
       applyDamageRegistryToRows();
       applyTreatmentRegistryToRows();
 
@@ -3222,11 +3389,16 @@
       state.damageRegistry[key].treatment = row.__txfTratativa;
     }
     rememberTreatment(row);
-    renderReceivedMonitor();
-    renderSocLhMonitor();
-    renderOnHoldMonitor();
-    if (row.__txfDamage) renderDamageView();
-    scheduleCloudSave();
+    scheduleCloudSave(4000);
+  }
+
+  function syncTreatmentUi(rowId) {
+    const row = state.rows.find(item => item.__txfRowId === rowId);
+    const active = activeViewId();
+    if (active === 'received') renderReceivedMonitor();
+    else if (active === 'soc-lh') renderSocLhMonitor();
+    else if (active === 'on-hold') renderOnHoldMonitor();
+    else if (active === 'damage' || row?.__txfDamage) renderDamageView();
   }
 
   function rowSearchText(row) {
@@ -3422,6 +3594,9 @@
       const removeDamageButton = event.target.closest('[data-remove-damage]');
       if (removeDamageButton) removeDamageEntry(removeDamageButton.dataset.removeDamage);
 
+      const deleteCepButton = event.target.closest('[data-delete-cep]');
+      if (deleteCepButton) removeManualCepEntry(deleteCepButton.dataset.deleteCep);
+
       const routeCityButton = event.target.closest('[data-route-city]');
       if (routeCityButton) {
         const city = routeCityButton.dataset.routeCity;
@@ -3464,15 +3639,18 @@
 
     document.body.addEventListener('focusout', event => {
       const treatmentInput = event.target.closest('[data-treatment-row]');
-      if (treatmentInput && state.rows.length) saveCloudState();
+      if (!treatmentInput) return;
+      syncTreatmentUi(treatmentInput.dataset.treatmentRow);
+      if (state.rows.length) scheduleCloudSave(400);
     });
 
     els.fileInput.addEventListener('change', event => handleFiles(event.target.files));
-    els.damageTracking.addEventListener('input', updateDamagePreview);
+    els.damageTracking.addEventListener('input', debouncedDamagePreview);
     els.damageForm.addEventListener('submit', event => {
       event.preventDefault();
       addDamageEntry();
     });
+    els.manualCepForm?.addEventListener('submit', addManualCepEntry);
     els.routeDefaultBtn.addEventListener('click', () => {
       const cityGroups = groupedRouteStats(state.rows, row => value(row, 'city'));
       setRouteCities(routeCityDefaults(cityGroups));
@@ -3495,14 +3673,17 @@
       state.receivedMonitor.sort = els.receivedSort.value === 'asc' ? 'asc' : 'desc';
       renderReceivedMonitor();
     });
-    els.receivedSearch.addEventListener('input', () => {
-      state.receivedMonitor.search = els.receivedSearch.value;
+    const debouncedReceivedSearch = debounce(() => {
       const rows = receivedMonitorRows().filter(row => {
         if (state.receivedMonitor.city && value(row, 'city') !== state.receivedMonitor.city) return false;
         if (state.receivedMonitor.bairro && value(row, 'bairro') !== state.receivedMonitor.bairro) return false;
         return true;
       });
       renderReceivedSearch(rows);
+    }, 160);
+    els.receivedSearch.addEventListener('input', () => {
+      state.receivedMonitor.search = els.receivedSearch.value;
+      debouncedReceivedSearch();
     });
     els.assignedCityFilter.addEventListener('change', () => {
       state.assignedMonitor.city = els.assignedCityFilter.value;
@@ -3517,9 +3698,17 @@
       state.assignedMonitor.sort = els.assignedSort.value === 'asc' ? 'asc' : 'desc';
       renderAssignedMonitor();
     });
+    const debouncedAssignedSearch = debounce(() => {
+      const rows = assignedMonitorRows().filter(row => {
+        if (state.assignedMonitor.city && value(row, 'city') !== state.assignedMonitor.city) return false;
+        if (state.assignedMonitor.bairro && value(row, 'bairro') !== state.assignedMonitor.bairro) return false;
+        return true;
+      });
+      renderAssignedSearch(rows);
+    }, 160);
     els.assignedSearch.addEventListener('input', () => {
       state.assignedMonitor.search = els.assignedSearch.value;
-      renderAssignedMonitor();
+      debouncedAssignedSearch();
     });
     els.socLhCityFilter.addEventListener('change', () => {
       state.socLhMonitor.city = els.socLhCityFilter.value;
@@ -3534,14 +3723,17 @@
       state.socLhMonitor.sort = els.socLhSort.value === 'asc' ? 'asc' : 'desc';
       renderSocLhMonitor();
     });
-    els.socLhSearch.addEventListener('input', () => {
-      state.socLhMonitor.search = els.socLhSearch.value;
+    const debouncedSocLhSearch = debounce(() => {
       const rows = socLhMonitorRows().filter(row => {
         if (state.socLhMonitor.city && value(row, 'city') !== state.socLhMonitor.city) return false;
         if (state.socLhMonitor.bairro && value(row, 'bairro') !== state.socLhMonitor.bairro) return false;
         return true;
       });
       renderSocLhSearch(rows);
+    }, 160);
+    els.socLhSearch.addEventListener('input', () => {
+      state.socLhMonitor.search = els.socLhSearch.value;
+      debouncedSocLhSearch();
     });
     els.onHoldCityFilter.addEventListener('change', () => {
       state.onHoldMonitor.city = els.onHoldCityFilter.value;
@@ -3562,8 +3754,7 @@
       state.onHoldMonitor.sort = els.onHoldSort.value === 'asc' ? 'asc' : 'desc';
       renderOnHoldMonitor();
     });
-    els.onHoldSearch.addEventListener('input', () => {
-      state.onHoldMonitor.search = els.onHoldSearch.value;
+    const debouncedOnHoldSearch = debounce(() => {
       const rows = onHoldMonitorRows().filter(row => {
         if (state.onHoldMonitor.city && value(row, 'city') !== state.onHoldMonitor.city) return false;
         if (state.onHoldMonitor.bairro && value(row, 'bairro') !== state.onHoldMonitor.bairro) return false;
@@ -3571,11 +3762,15 @@
         return true;
       });
       renderOnHoldSearch(rows);
+    }, 160);
+    els.onHoldSearch.addEventListener('input', () => {
+      state.onHoldMonitor.search = els.onHoldSearch.value;
+      debouncedOnHoldSearch();
     });
-    els.searchInput.addEventListener('input', renderSearch);
+    els.searchInput.addEventListener('input', debouncedGlobalSearch);
     els.modalSearch.addEventListener('input', () => {
       state.modalFilters.search = els.modalSearch.value;
-      renderModalRows();
+      debouncedModalSearch();
     });
     els.modalStatusFilter.addEventListener('change', () => {
       state.modalFilters.status = els.modalStatusFilter.value;
@@ -3687,6 +3882,10 @@
     setMonitoringOpen(['received', 'assigned', 'soc-lh', 'on-hold'].includes(nextId));
     if (els.emptyState) els.emptyState.classList.toggle('hidden', (state.stats?.total || 0) > 0);
     if (options.persist !== false) rememberViewId(nextId);
+    if (nextId === 'received') renderReceivedMonitor();
+    if (nextId === 'assigned') renderAssignedMonitor();
+    if (nextId === 'soc-lh') renderSocLhMonitor();
+    if (nextId === 'on-hold') renderOnHoldMonitor();
     refreshIcons();
   }
 
@@ -3730,13 +3929,14 @@
       return;
     }
     appStarted = true;
+    loadManualCepRegistry();
     loadHistory();
     try {
       localStorage.removeItem(HISTORY_KEY);
     } catch (error) {
       console.warn('startApp', error);
     }
-    els.cepCount.textContent = number(Object.keys(cepMap).length);
+    refreshCepCount();
     bindEvents();
     renderAll();
     setView(readSavedViewId(), { persist: false });
