@@ -20,6 +20,8 @@
   let currentSession = null;
   let appStarted = false;
   let cloudSaveTimer = null;
+  let cloudSaveInProgress = false;
+  let cloudSavePending = false;
   let cloudLoadInProgress = false;
   let importInProgress = false;
   let iconRefreshFrame = null;
@@ -611,6 +613,25 @@
     els.cloudStatus.className = `cloud-status ${type}`.trim();
   }
 
+  const CLOUD_SAVE_UNLOAD_MESSAGE = 'Aguarde o salvamento na nuvem para não perder os dados preenchidos.';
+
+  function hasCloudSavePending() {
+    return Boolean(cloudSaveTimer || cloudSaveInProgress || cloudSavePending || importInProgress);
+  }
+
+  function clearCloudSavePendingFlag() {
+    if (!cloudSaveTimer && !cloudSaveInProgress) cloudSavePending = false;
+  }
+
+  function installCloudSaveExitGuard() {
+    window.addEventListener('beforeunload', event => {
+      if (!hasCloudSavePending()) return;
+      event.preventDefault();
+      event.returnValue = CLOUD_SAVE_UNLOAD_MESSAGE;
+      return CLOUD_SAVE_UNLOAD_MESSAGE;
+    });
+  }
+
   function repairVisibleText(root = document.body, force = false) {
     if (!root) return;
     if (textRepairPerformed && !force) return;
@@ -1083,40 +1104,58 @@
   }
 
   async function saveCloudState() {
+    if (cloudSaveInProgress) {
+      cloudSavePending = true;
+      setCloudStatus('Nuvem: já existe um salvamento em andamento. Aguarde finalizar.', 'warn');
+      return false;
+    }
     if (!currentSession?.access_token) {
+      window.clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
+      cloudSavePending = false;
       setCloudStatus('Nuvem: entre com login para salvar.', 'warn');
       return false;
     }
     if (!state.rows.length) {
+      window.clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
+      cloudSavePending = false;
       setCloudStatus('Nuvem: importe uma planilha antes de salvar.', 'warn');
       return false;
     }
     if (!supabaseClient) {
-      setCloudStatus('Nuvem: conexão Supabase não carregou.', 'error');
+      cloudSavePending = true;
+      setCloudStatus('Nuvem: conexão Supabase não carregou. Dados ainda não foram salvos.', 'error');
       return false;
     }
 
-    captureTreatmentRegistryFromRows();
-    setCloudStatus('Nuvem: sincronizando tratativas antes de salvar...', 'warn');
-    const canProtectSave = await syncProtectedDataFromCloud({ silent: true, applyToRows: true });
-    if (!canProtectSave) {
-      setCloudStatus('Nuvem: salvamento cancelado para evitar perda de tratativas. Tente novamente.', 'error');
-      return false;
-    }
+    window.clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+    cloudSaveInProgress = true;
+    cloudSavePending = false;
 
-    const payload = {
-      version: 2,
-      savedAt: new Date().toISOString(),
-      files: state.importFiles.slice(),
-      rows: normalizedCloudRows(),
-      damageRegistry: normalizedDamageRegistry(),
-      treatmentRegistry: normalizedTreatmentRegistry(),
-      manualCepRegistry: normalizedManualCepRegistry(),
-      history: normalizedHistory()
-    };
-
-    setCloudStatus('Nuvem: salvando última importação...', 'warn');
     try {
+      captureTreatmentRegistryFromRows();
+      setCloudStatus('Nuvem: sincronizando tratativas antes de salvar...', 'warn');
+      const canProtectSave = await syncProtectedDataFromCloud({ silent: true, applyToRows: true });
+      if (!canProtectSave) {
+        cloudSavePending = true;
+        setCloudStatus('Nuvem: salvamento cancelado para evitar perda de tratativas. Tente novamente.', 'error');
+        return false;
+      }
+
+      const payload = {
+        version: 2,
+        savedAt: new Date().toISOString(),
+        files: state.importFiles.slice(),
+        rows: normalizedCloudRows(),
+        damageRegistry: normalizedDamageRegistry(),
+        treatmentRegistry: normalizedTreatmentRegistry(),
+        manualCepRegistry: normalizedManualCepRegistry(),
+        history: normalizedHistory()
+      };
+
+      setCloudStatus('Nuvem: salvando última importação...', 'warn');
       const { error } = await supabaseClient
         .from(CLOUD_TABLE)
         .upsert(
@@ -1130,16 +1169,30 @@
       setCloudStatus(`Nuvem: última importação salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
       return true;
     } catch (error) {
+      cloudSavePending = true;
       const details = friendlyCloudError(error);
-      setCloudStatus(`Nuvem: erro ao salvar: ${details}.`, 'error');
+      setCloudStatus(`Nuvem: erro ao salvar: ${details}. Dados ainda não foram confirmados na nuvem.`, 'error');
       console.warn('saveCloudState', error);
       return false;
+    } finally {
+      cloudSaveInProgress = false;
+      if (cloudSavePending && state.rows.length && currentSession?.access_token && supabaseClient) {
+        window.clearTimeout(cloudSaveTimer);
+        cloudSaveTimer = window.setTimeout(() => saveCloudState(), 1800);
+      } else {
+        clearCloudSavePendingFlag();
+      }
     }
   }
 
   function scheduleCloudSave(delay = 900) {
     if (!state.rows.length || !currentSession?.access_token) return;
+    cloudSavePending = true;
     window.clearTimeout(cloudSaveTimer);
+    if (cloudSaveInProgress) {
+      setCloudStatus('Nuvem: salvamento em andamento. Novas alterações entrarão no próximo envio.', 'warn');
+      return;
+    }
     cloudSaveTimer = window.setTimeout(() => saveCloudState(), delay);
   }
 
@@ -4107,6 +4160,7 @@
     appStarted = true;
     loadManualCepRegistry();
     loadHistory();
+    installCloudSaveExitGuard();
     try {
       localStorage.removeItem(HISTORY_KEY);
     } catch (error) {
