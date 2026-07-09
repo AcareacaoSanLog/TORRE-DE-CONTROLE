@@ -23,6 +23,8 @@
   let cloudSaveInProgress = false;
   let cloudSavePending = false;
   let cloudLoadInProgress = false;
+  let localEditVersion = 0;
+  let lastCloudSavedVersion = 0;
   let importInProgress = false;
   let iconRefreshFrame = null;
   let textRepairPerformed = false;
@@ -623,6 +625,12 @@
     if (!cloudSaveTimer && !cloudSaveInProgress) cloudSavePending = false;
   }
 
+  function markCloudDirty() {
+    localEditVersion += 1;
+    cloudSavePending = true;
+    return localEditVersion;
+  }
+
   function installCloudSaveExitGuard() {
     window.addEventListener('beforeunload', event => {
       if (!hasCloudSavePending()) return;
@@ -816,23 +824,28 @@
   }
 
   function normalizedCloudRows() {
-    return state.rows.map(row => ({
-      tracking: value(row, 'tracking'),
-      status: statusOf(row),
-      cep: cepOf(row),
-      city: value(row, 'city'),
-      bairro: value(row, 'bairro'),
-      driverId: value(row, 'driverId'),
-      driver: value(row, 'driver'),
-      __file: row.__file || '',
-      __sheet: row.__sheet || '',
-      __txfRowId: row.__txfRowId || '',
-      __txfTratativa: row.__txfTratativa || '',
-      __txfStatusOverride: row.__txfStatusOverride || '',
-      __txfStatusAction: row.__txfStatusAction || '',
-      __txfDamage: row.__txfDamage || '',
-      __txfDamageCreatedAt: row.__txfDamageCreatedAt || ''
-    }));
+    return state.rows.map(row => {
+      const key = trackingKey(value(row, 'tracking'));
+      const treatmentRecord = key ? state.treatmentRegistry[key] : null;
+      return {
+        tracking: value(row, 'tracking'),
+        status: statusOf(row),
+        cep: cepOf(row),
+        city: value(row, 'city'),
+        bairro: value(row, 'bairro'),
+        driverId: value(row, 'driverId'),
+        driver: value(row, 'driver'),
+        __file: row.__file || '',
+        __sheet: row.__sheet || '',
+        __txfRowId: row.__txfRowId || '',
+        __txfTratativa: row.__txfTratativa || '',
+        __txfStatusOverride: row.__txfStatusOverride || '',
+        __txfStatusAction: row.__txfStatusAction || '',
+        __txfTreatmentUpdatedAt: treatmentRecord?.updatedAt || row.__txfTreatmentUpdatedAt || '',
+        __txfDamage: row.__txfDamage || '',
+        __txfDamageCreatedAt: row.__txfDamageCreatedAt || ''
+      };
+    });
   }
 
   function normalizedDamageRegistry() {
@@ -859,7 +872,7 @@
           treatment,
           statusAction,
           statusOverride,
-          updatedAt: row.__txfTreatmentUpdatedAt || new Date().toISOString()
+          updatedAt: row.__txfTreatmentUpdatedAt || ''
         };
       }
       return registry;
@@ -1133,11 +1146,12 @@
     cloudSaveTimer = null;
     cloudSaveInProgress = true;
     cloudSavePending = false;
+    const saveStartedVersion = localEditVersion;
 
     try {
       captureTreatmentRegistryFromRows();
       setCloudStatus('Nuvem: sincronizando tratativas antes de salvar...', 'warn');
-      const canProtectSave = await syncProtectedDataFromCloud({ silent: true, applyToRows: true });
+      const canProtectSave = await syncProtectedDataFromCloud({ silent: true, applyToRows: false });
       if (!canProtectSave) {
         cloudSavePending = true;
         setCloudStatus('Nuvem: salvamento cancelado para evitar perda de tratativas. Tente novamente.', 'error');
@@ -1166,7 +1180,13 @@
         .single();
 
       if (error) throw error;
-      setCloudStatus(`Nuvem: última importação salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
+      lastCloudSavedVersion = Math.max(lastCloudSavedVersion, saveStartedVersion);
+      if (localEditVersion > saveStartedVersion) {
+        cloudSavePending = true;
+        setCloudStatus('Nuvem: salvamento concluído. Enviando alterações feitas durante o salvamento...', 'warn');
+      } else {
+        setCloudStatus(`Nuvem: última importação salva em ${new Date(payload.savedAt).toLocaleString('pt-BR')}.`, 'ok');
+      }
       return true;
     } catch (error) {
       cloudSavePending = true;
@@ -1176,18 +1196,21 @@
       return false;
     } finally {
       cloudSaveInProgress = false;
-      if (cloudSavePending && state.rows.length && currentSession?.access_token && supabaseClient) {
+      const hasEditsAfterSaveStarted = localEditVersion > saveStartedVersion;
+      if ((cloudSavePending || hasEditsAfterSaveStarted) && state.rows.length && currentSession?.access_token && supabaseClient) {
+        cloudSavePending = true;
         window.clearTimeout(cloudSaveTimer);
-        cloudSaveTimer = window.setTimeout(() => saveCloudState(), 1800);
+        cloudSaveTimer = window.setTimeout(() => saveCloudState(), 900);
       } else {
         clearCloudSavePendingFlag();
       }
     }
   }
 
-  function scheduleCloudSave(delay = 900) {
+  function scheduleCloudSave(delay = 900, options = {}) {
     if (!state.rows.length || !currentSession?.access_token) return;
-    cloudSavePending = true;
+    if (options.markDirty !== false) markCloudDirty();
+    else cloudSavePending = true;
     window.clearTimeout(cloudSaveTimer);
     if (cloudSaveInProgress) {
       setCloudStatus('Nuvem: salvamento em andamento. Novas alterações entrarão no próximo envio.', 'warn');
@@ -1324,31 +1347,32 @@
     });
   }
 
-  function rememberTreatment(row) {
+  function rememberTreatment(row, options = {}) {
     const key = trackingKey(value(row, 'tracking'));
     if (!key) return;
     const treatment = row.__txfTratativa || '';
     const statusAction = row.__txfStatusAction || '';
     const statusOverride = row.__txfStatusOverride || '';
-    if (!treatment && !statusAction && !statusOverride) {
-      state.treatmentRegistry[key] = {
-        tracking: key,
-        treatment: '',
-        statusAction: '',
-        statusOverride: '',
-        deleted: true,
-        updatedAt: new Date().toISOString()
-      };
-      return;
-    }
+    const existing = state.treatmentRegistry[key] || {};
+    const deleted = !treatment && !statusAction && !statusOverride;
+    const changed = !existing.updatedAt
+      || existing.treatment !== treatment
+      || existing.statusAction !== statusAction
+      || existing.statusOverride !== statusOverride
+      || Boolean(existing.deleted) !== deleted;
+    const updatedAt = options.forceTouch || changed
+      ? new Date().toISOString()
+      : (existing.updatedAt || row.__txfTreatmentUpdatedAt || '');
+
     state.treatmentRegistry[key] = {
       tracking: key,
-      treatment,
-      statusAction,
-      statusOverride,
-      deleted: false,
-      updatedAt: new Date().toISOString()
+      treatment: deleted ? '' : treatment,
+      statusAction: deleted ? '' : statusAction,
+      statusOverride: deleted ? '' : statusOverride,
+      deleted,
+      updatedAt
     };
+    row.__txfTreatmentUpdatedAt = updatedAt;
   }
 
   function captureTreatmentRegistryFromRows() {
@@ -1361,6 +1385,9 @@
     state.rows.forEach(row => {
       const registryItem = state.treatmentRegistry[trackingKey(value(row, 'tracking'))];
       if (!registryItem) return;
+      const rowTreatmentMs = registryDateMs(row.__txfTreatmentUpdatedAt);
+      const registryTreatmentMs = registryDateMs(registryItem.updatedAt);
+      if (rowTreatmentMs > registryTreatmentMs) return;
       const realStatus = normalizeStatus(raw(row, 'status') || row.status || row.__sheet || row.__file);
       if (registryItem.deleted) {
         row.__txfTratativa = '';
@@ -3606,19 +3633,24 @@
     state.currentRows = filteredRows(state.currentFilter || { kind: 'Hub_Received' });
     renderModalFilterOptions();
     renderModalRows();
-    if (state.rows.length) saveCloudState();
+    if (state.rows.length) {
+      markCloudDirty();
+      scheduleCloudSave(700, { markDirty: false });
+    }
   }
 
   function updateTreatment(rowId, text) {
     const row = state.rows.find(item => item.__txfRowId === rowId);
     if (!row) return;
-    row.__txfTratativa = clean(text);
+    const nextTreatment = clean(text);
+    if ((row.__txfTratativa || '') === nextTreatment) return;
+    row.__txfTratativa = nextTreatment;
     const key = trackingKey(value(row, 'tracking'));
     if (row.__txfDamage && state.damageRegistry[key]) {
       state.damageRegistry[key].treatment = row.__txfTratativa;
     }
-    rememberTreatment(row);
-    scheduleCloudSave(4000);
+    rememberTreatment(row, { forceTouch: true });
+    scheduleCloudSave(2500);
   }
 
   function syncTreatmentUi(rowId) {
@@ -3870,7 +3902,7 @@
       const treatmentInput = event.target.closest('[data-treatment-row]');
       if (!treatmentInput) return;
       syncTreatmentUi(treatmentInput.dataset.treatmentRow);
-      if (state.rows.length) scheduleCloudSave(400);
+      if (state.rows.length) scheduleCloudSave(400, { markDirty: false });
     });
 
     els.fileInput.addEventListener('change', event => handleFiles(event.target.files));
