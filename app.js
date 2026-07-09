@@ -28,6 +28,7 @@
   let importInProgress = false;
   let iconRefreshFrame = null;
   let textRepairPerformed = false;
+  let managerRefreshTimer = null;
   const ACTIVE_VIEW_KEY = 'txf-plus-active-view-v2';
 
   const state = {
@@ -695,6 +696,8 @@
 
   function clearSessionData() {
     window.clearTimeout(cloudSaveTimer);
+    window.clearTimeout(managerRefreshTimer);
+    managerRefreshTimer = null;
     cloudSaveTimer = null;
     state.rows = [];
     state.columns = {};
@@ -2114,6 +2117,26 @@
         <b class="severity ${html(item.severity)}">${html(severityLabel(item.severity))}</b>
       </button>
     `).join('') : '<div class="action-item"><b class="action-index">OK</b><span><strong>Sem plano crítico</strong><span>Importe os dados para gerar prioridades.</span></span><b class="severity good">OK</b></div>';
+  }
+
+  function refreshManagerSummaryNow(options = {}) {
+    if (!state.rows.length || !els.managerSummary) return;
+    const stats = options.recalculateStats ? summarize() : (state.stats || summarize());
+    const snapshot = createSnapshot(stats);
+    const previous = previousSnapshot();
+    const actionItems = buildActionItems(stats, snapshot);
+    state.actionPlanText = actionItems.map((item, index) => `${index + 1}. ${item.title} - ${item.detail}`).join('\n');
+    state.managerText = buildManagerText(snapshot, previous, actionItems, stats);
+    els.managerSummary.value = state.managerText;
+  }
+
+  function scheduleManagerSummaryRefresh(delay = 180, options = {}) {
+    if (!state.rows.length) return;
+    window.clearTimeout(managerRefreshTimer);
+    managerRefreshTimer = window.setTimeout(() => {
+      managerRefreshTimer = null;
+      refreshManagerSummaryNow(options);
+    }, delay);
   }
 
   function buildActionItems(stats, snapshot) {
@@ -3650,6 +3673,7 @@
       state.damageRegistry[key].treatment = row.__txfTratativa;
     }
     rememberTreatment(row, { forceTouch: true });
+    scheduleManagerSummaryRefresh(120);
     scheduleCloudSave(2500);
   }
 
@@ -3902,6 +3926,7 @@
       const treatmentInput = event.target.closest('[data-treatment-row]');
       if (!treatmentInput) return;
       syncTreatmentUi(treatmentInput.dataset.treatmentRow);
+      refreshManagerSummaryNow();
       if (state.rows.length) scheduleCloudSave(400, { markDirty: false });
     });
 
@@ -4067,7 +4092,10 @@
     els.copyMapBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.mapSummary || 'Importe os arquivos para gerar o mapa operacional.'));
     els.copyRouteBtn.addEventListener('click', copyRouteSummary);
 
-    els.copyManagerBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.managerText || 'Importe os arquivos para gerar o resumo gerencial.'));
+    els.copyManagerBtn.addEventListener('click', () => {
+      refreshManagerSummaryNow();
+      navigator.clipboard?.writeText(state.managerText || 'Importe os arquivos para gerar o resumo gerencial.');
+    });
     els.copyActionPlanBtn.addEventListener('click', () => navigator.clipboard?.writeText(state.actionPlanText || 'Importe os arquivos para gerar o plano de ação.'));
     els.downloadPendingBtn.addEventListener('click', downloadPending);
     els.saveCloudBtn.addEventListener('click', () => saveCloudState());
@@ -4147,6 +4175,7 @@
     if (nextId === 'assigned') renderAssignedMonitor();
     if (nextId === 'soc-lh') renderSocLhMonitor();
     if (nextId === 'on-hold') renderOnHoldMonitor();
+    if (nextId === 'manager') refreshManagerSummaryNow();
     refreshIcons();
   }
 
