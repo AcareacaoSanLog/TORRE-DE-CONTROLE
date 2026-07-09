@@ -841,9 +841,9 @@
         __file: row.__file || '',
         __sheet: row.__sheet || '',
         __txfRowId: row.__txfRowId || '',
-        __txfTratativa: row.__txfTratativa || '',
+        __txfTratativa: latestTreatmentOf(row, ''),
         __txfStatusOverride: row.__txfStatusOverride || '',
-        __txfStatusAction: row.__txfStatusAction || '',
+        __txfStatusAction: latestStatusActionOf(row),
         __txfTreatmentUpdatedAt: treatmentRecord?.updatedAt || row.__txfTreatmentUpdatedAt || '',
         __txfDamage: row.__txfDamage || '',
         __txfDamageCreatedAt: row.__txfDamageCreatedAt || ''
@@ -866,8 +866,8 @@
     return rows.reduce((registry, row) => {
       const key = trackingKey(row.tracking || row.__tracking || row.__txfTracking || row.tracking_code || value(row, 'tracking') || '');
       if (!key) return registry;
-      const treatment = row.__txfTratativa || '';
-      const statusAction = row.__txfStatusAction || '';
+      const treatment = latestTreatmentOf(row, '');
+      const statusAction = latestStatusActionOf(row);
       const statusOverride = row.__txfStatusOverride || '';
       if (treatment || statusAction || statusOverride) {
         registry[key] = {
@@ -1300,6 +1300,41 @@
     return clean(value).toUpperCase();
   }
 
+  function treatmentRecordForRow(row) {
+    const key = trackingKey(value(row, 'tracking'));
+    return key ? state.treatmentRegistry?.[key] : null;
+  }
+
+  function latestTreatmentOf(row, fallback = '') {
+    const rowTreatment = clean(row.__txfTratativa || '');
+    const record = treatmentRecordForRow(row);
+    if (!record) return rowTreatment || clean(fallback);
+    const rowMs = registryDateMs(row.__txfTreatmentUpdatedAt);
+    const recordMs = registryDateMs(record.updatedAt);
+    if (recordMs >= rowMs) {
+      if (record.deleted) return '';
+      return clean(record.treatment || rowTreatment || fallback);
+    }
+    return rowTreatment || clean(fallback);
+  }
+
+  function latestStatusActionOf(row) {
+    const rowAction = clean(row.__txfStatusAction || '');
+    const record = treatmentRecordForRow(row);
+    if (!record) return rowAction;
+    const rowMs = registryDateMs(row.__txfTreatmentUpdatedAt);
+    const recordMs = registryDateMs(record.updatedAt);
+    if (recordMs >= rowMs) {
+      if (record.deleted) return '';
+      return clean(record.statusAction || rowAction);
+    }
+    return rowAction;
+  }
+
+  function treatmentOrActionOf(row, fallback = '') {
+    return latestTreatmentOf(row) || latestStatusActionOf(row) || clean(fallback);
+  }
+
   function ensureRowIds() {
     state.rows.forEach((row, index) => {
       if (!row.__txfRowId) row.__txfRowId = `txf-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1315,7 +1350,7 @@
           cep: row.cep || '',
           city: row.city || '',
           bairro: row.bairro || '',
-          treatment: row.__txfTratativa || 'Avaria registrada',
+          treatment: latestTreatmentOf(row, 'Avaria registrada'),
           createdAt: row.__txfDamageCreatedAt || ''
         };
       }
@@ -1353,8 +1388,8 @@
   function rememberTreatment(row, options = {}) {
     const key = trackingKey(value(row, 'tracking'));
     if (!key) return;
-    const treatment = row.__txfTratativa || '';
-    const statusAction = row.__txfStatusAction || '';
+    const treatment = clean(row.__txfTratativa || '');
+    const statusAction = clean(row.__txfStatusAction || '');
     const statusOverride = row.__txfStatusOverride || '';
     const existing = state.treatmentRegistry[key] || {};
     const deleted = !treatment && !statusAction && !statusOverride;
@@ -2120,6 +2155,7 @@
   }
 
   function refreshManagerSummaryNow(options = {}) {
+    applyTreatmentRegistryToRows();
     if (!state.rows.length || !els.managerSummary) return;
     const stats = options.recalculateStats ? summarize() : (state.stats || summarize());
     const snapshot = createSnapshot(stats);
@@ -2254,7 +2290,7 @@
       if (!groups.has(key)) groups.set(key, { city, bairro, qty: 0, treatments: new Map() });
       const data = groups.get(key);
       data.qty += 1;
-      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || 'Sem tratativa registrada');
+      const treatment = clean(treatmentOrActionOf(row, 'Sem tratativa registrada'));
       data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
     });
     return Array.from(groups.values())
@@ -2296,7 +2332,7 @@
     rows.filter(row => isDamageRow(row)).forEach(row => {
       const status = statusOf(row);
       const statusLabel = statusConfig[status]?.label || status || 'Sem status';
-      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || 'Avaria registrada');
+      const treatment = clean(treatmentOrActionOf(row, 'Avaria registrada'));
       const key = groupKey([statusLabel, treatment]);
       if (!groups.has(key)) groups.set(key, { status: statusLabel, treatment, qty: 0 });
       groups.get(key).qty += 1;
@@ -2474,6 +2510,7 @@
   }
 
   function renderReceivedMonitor() {
+    applyTreatmentRegistryToRows();
     const rows = receivedMonitorRows();
     const cityOptions = Array.from(new Set(rows.map(row => value(row, 'city'))))
       .sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -2499,7 +2536,7 @@
       if (!grouped.has(key)) grouped.set(key, { qty: 0, treatments: new Map() });
       const data = grouped.get(key);
       data.qty += 1;
-      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || '');
+      const treatment = clean(treatmentOrActionOf(row, ''));
       if (treatment) data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
     });
     const direction = state.receivedMonitor.sort === 'asc' ? 1 : -1;
@@ -2622,6 +2659,7 @@
   }
 
   function renderSocLhMonitor() {
+    applyTreatmentRegistryToRows();
     const rows = socLhMonitorRows();
     const cityOptions = Array.from(new Set(rows.map(row => value(row, 'city'))))
       .sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -2647,7 +2685,7 @@
       if (!grouped.has(key)) grouped.set(key, { qty: 0, treatments: new Map() });
       const data = grouped.get(key);
       data.qty += 1;
-      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || '');
+      const treatment = clean(treatmentOrActionOf(row, ''));
       if (treatment) data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
     });
     const direction = state.socLhMonitor.sort === 'asc' ? 1 : -1;
@@ -2699,6 +2737,7 @@
   }
 
   function renderOnHoldMonitor() {
+    applyTreatmentRegistryToRows();
     const rows = onHoldMonitorRows();
     if (!els.onHoldTable) return;
 
@@ -2735,7 +2774,7 @@
       if (!grouped.has(key)) grouped.set(key, { qty: 0, treatments: new Map() });
       const data = grouped.get(key);
       data.qty += 1;
-      const treatment = clean(row.__txfTratativa || row.__txfStatusAction || '');
+      const treatment = clean(treatmentOrActionOf(row, ''));
       if (treatment) data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
     });
     const direction = state.onHoldMonitor.sort === 'asc' ? 1 : -1;
@@ -2979,7 +3018,7 @@
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
         <td>${statusPill(displayStatusOf(row))}</td>
-        <td>${html(row.__txfTratativa || '')}</td>
+        <td>${html(latestTreatmentOf(row, ''))}</td>
         <td><button class="mini-button danger" data-remove-damage="${html(row.__txfRowId)}">Remover</button></td>
       </tr>
     `).join('') || '<tr><td colspan="7">Nenhuma avaria cadastrada.</td></tr>';
@@ -3559,6 +3598,7 @@
   }
 
   function renderModalRows() {
+    applyTreatmentRegistryToRows();
     renderModalHeader();
     const filteredRows = filteredModalRows();
     state.modalVisibleRows = filteredRows;
@@ -3609,7 +3649,7 @@
         <td>${html(value(row, 'bairro'))}</td>
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
-        <td>${html(row.__txfTratativa || 'Avaria registrada')}</td>
+        <td>${html(latestTreatmentOf(row, 'Avaria registrada'))}</td>
       </tr>
     `;
   }
@@ -3624,8 +3664,8 @@
         <td>${html(value(row, 'tracking'))}</td>
         <td>
           <select class="status-action-select" data-status-row="${html(row.__txfRowId || '')}">
-            <option value="${html(baseKind)}" ${row.__txfStatusAction === 'Criado AT' ? '' : 'selected'}>${html(baseLabel)}</option>
-            <option value="Criado AT" ${row.__txfStatusAction === 'Criado AT' ? 'selected' : ''}>Criado AT</option>
+            <option value="${html(baseKind)}" ${latestStatusActionOf(row) === 'Criado AT' ? '' : 'selected'}>${html(baseLabel)}</option>
+            <option value="Criado AT" ${latestStatusActionOf(row) === 'Criado AT' ? 'selected' : ''}>Criado AT</option>
           </select>
         </td>
         <td>${html(cepOf(row))}</td>
@@ -3634,7 +3674,7 @@
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
         <td>
-          <textarea class="treatment-input" data-treatment-row="${html(row.__txfRowId || '')}" rows="2" placeholder="Descreva a tratativa realizada">${html(row.__txfTratativa || '')}</textarea>
+          <textarea class="treatment-input" data-treatment-row="${html(row.__txfRowId || '')}" rows="2" placeholder="Descreva a tratativa realizada">${html(latestTreatmentOf(row, ''))}</textarea>
         </td>
       </tr>
     `;
@@ -3666,7 +3706,7 @@
     const row = state.rows.find(item => item.__txfRowId === rowId);
     if (!row) return;
     const nextTreatment = clean(text);
-    if ((row.__txfTratativa || '') === nextTreatment) return;
+    if ((latestTreatmentOf(row, '')) === nextTreatment) return;
     row.__txfTratativa = nextTreatment;
     const key = trackingKey(value(row, 'tracking'));
     if (row.__txfDamage && state.damageRegistry[key]) {
@@ -3695,8 +3735,8 @@
       value(row, 'bairro'),
       value(row, 'driverId'),
       value(row, 'driver'),
-      row.__txfTratativa || '',
-      row.__txfStatusAction || ''
+      latestTreatmentOf(row, ''),
+      latestStatusActionOf(row)
     ].join(' ');
   }
 
@@ -3725,7 +3765,7 @@
       value(row, 'bairro'),
       value(row, 'driverId'),
       value(row, 'driver'),
-      ...(includeTreatment ? [row.__txfStatusAction || '', row.__txfTratativa || ''] : [])
+      ...(includeTreatment ? [latestStatusActionOf(row), latestTreatmentOf(row, '')] : [])
     ].join('\t')).join('\n');
     navigator.clipboard?.writeText(text);
   }
@@ -3804,7 +3844,7 @@
       value(row, 'bairro'),
       value(row, 'driverId'),
       value(row, 'driver'),
-      ...(includeTreatment ? [row.__txfStatusAction || '', row.__txfTratativa || ''] : [])
+      ...(includeTreatment ? [latestStatusActionOf(row), latestTreatmentOf(row, '')] : [])
     ]);
     downloadCsv([header, ...body], filename);
   }
