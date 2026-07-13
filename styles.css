@@ -2545,3 +2545,16 @@ td {
   opacity: 0.55;
   cursor: wait;
 }
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
