@@ -2231,28 +2231,21 @@
 
   function buildManagerText(snapshot, previous, actionItems, stats) {
     const rows = visibleRows();
-    const receivedGroups = managerReceivedGroups(rows);
     const assignedGroups = managerAssignedGroups(rows);
+    const deliveringGroups = managerDeliveringGroups(rows);
     const onHoldGroups = managerOnHoldDriverGroups(rows);
-    const damageGroups = managerDamageStatusGroups(rows);
-    const damageTotal = rows.filter(row => isDamageRow(row)).length;
-    const deliveredPct = snapshot.total ? ` (${snapshot.sla.toFixed(2).replace('.', ',')}% do total)` : '';
-
-    const receivedText = receivedGroups.length
-      ? receivedGroups.map((item, index) => `${index + 1}. ${item.city} / ${item.bairro} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')} | Tratativa: ${item.treatment}`).join('\n')
-      : 'Sem BR em Hub Received no momento.';
 
     const assignedText = assignedGroups.length
       ? assignedGroups.map((item, index) => `${index + 1}. ${item.city} / ${item.bairro} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
       : 'Sem BR em Hub Assigned no momento.';
 
+    const deliveringText = deliveringGroups.length
+      ? deliveringGroups.map((item, index) => `${index + 1}. ${item.city} / ${item.bairro} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
+      : 'Sem BR em Delivering no momento.';
+
     const onHoldText = onHoldGroups.length
       ? onHoldGroups.map((item, index) => `${index + 1}. ${item.driver} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
       : 'Sem BR em OnHold no momento.';
-
-    const damageText = damageGroups.length
-      ? damageGroups.map((item, index) => `${index + 1}. ${item.status} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')} | Tratativa: ${item.treatment}`).join('\n')
-      : 'Sem avarias registradas no momento.';
 
     const managerDate = new Date(snapshot.date);
     const managerDateText = managerDate.toLocaleDateString('pt-BR');
@@ -2262,22 +2255,19 @@
       `📊 EXPECTATIVA DO DIA — ${managerDateText}`,
       `🕒 Atualizado às ${managerTimeText}`,
       '',
-      '🎯 INDICADORES DE META',
-      `✅ Delivered: ${number(snapshot.delivered)}${deliveredPct}`,
-      `🚚 SOC LH: ${number(snapshot.socLH)} ${plural(snapshot.socLH, 'BR', 'BRs')}`,
-      `⚠️ Avarias: ${number(damageTotal)} ${plural(damageTotal, 'BR', 'BRs')}`,
-      '',
-      '📦 HUB RECEIVED — CIDADE/BAIRRO, QTD E TRATATIVA',
-      receivedText,
+      '🎯 INDICADORES OPERACIONAIS',
+      `🧭 Hub Assigned: ${number(snapshot.assigned)} ${plural(snapshot.assigned, 'BR', 'BRs')}`,
+      `🚚 Delivering: ${number(snapshot.delivering)} ${plural(snapshot.delivering, 'BR', 'BRs')}`,
+      `⛔ OnHold: ${number(snapshot.hold)} ${plural(snapshot.hold, 'BR', 'BRs')}`,
       '',
       '🧭 HUB ASSIGNED — CIDADE/BAIRRO E QTD',
       assignedText,
       '',
-      '⛔ ONHOLD — POR ENTREGADOR',
-      onHoldText,
+      '🚚 DELIVERING — CIDADE/BAIRRO E QTD',
+      deliveringText,
       '',
-      '🛠️ AVARIAS — STATUS ATUAL E TRATATIVA',
-      damageText
+      '⛔ ONHOLD — POR ENTREGADOR',
+      onHoldText
     ].join('\n');
   }
 
@@ -2301,6 +2291,19 @@
   function managerAssignedGroups(rows) {
     const groups = new Map();
     rows.filter(row => isAssigned(statusOf(row))).forEach(row => {
+      const city = value(row, 'city');
+      const bairro = value(row, 'bairro');
+      const key = groupKey([city, bairro]);
+      if (!groups.has(key)) groups.set(key, { city, bairro, qty: 0 });
+      groups.get(key).qty += 1;
+    });
+    return Array.from(groups.values())
+      .sort((a, b) => b.qty - a.qty || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'));
+  }
+
+  function managerDeliveringGroups(rows) {
+    const groups = new Map();
+    rows.filter(row => statusOf(row) === 'Delivering').forEach(row => {
       const city = value(row, 'city');
       const bairro = value(row, 'bairro');
       const key = groupKey([city, bairro]);
