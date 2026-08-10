@@ -1759,7 +1759,7 @@ tr.clickable:hover { background: var(--surface-2); }
 
 .modal-filter-panel {
   display: grid;
-  grid-template-columns: repeat(5, minmax(130px, 1fr)) minmax(240px, 1.4fr) auto;
+  grid-template-columns: repeat(6, minmax(120px, 1fr)) minmax(240px, 1.4fr) auto;
   gap: 10px;
   align-items: end;
   margin-bottom: 12px;

@@ -426,7 +426,7 @@
             </label>
           </div>
           <div class="result-list assigned-results" id="assignedSearchResults"></div>
-          <div class="table-wrap tall"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedTable"></tbody></table></div>
+          <div class="table-wrap tall"><table><thead><tr><th>Cidade</th><th>Bairro</th><th>AT</th><th>Qtd</th><th></th></tr></thead><tbody id="assignedTable"></tbody></table></div>
         </section>
       </section>
 
@@ -628,6 +628,12 @@
           </select>
         </label>
         <label>
+          <span>AT</span>
+          <select id="modalAtFilter">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <label>
           <span>Driver</span>
           <select id="modalDriverFilter">
             <option value="">Todos</option>
@@ -639,6 +645,7 @@
             <option value="default">Padrão</option>
             <option value="city">Cidade</option>
             <option value="bairro">Bairro</option>
+            <option value="at">AT</option>
             <option value="status">Status</option>
             <option value="driver">Driver</option>
             <option value="tracking">Tracking</option>
@@ -646,11 +653,11 @@
         </label>
         <label class="modal-search-field">
           <span>Buscar BR</span>
-          <input id="modalSearch" type="search" placeholder="Digite BR, tracking, CEP ou tratativa">
+          <input id="modalSearch" type="search" placeholder="Digite BR, tracking, CEP, AT ou tratativa">
         </label>
         <button class="mini-button modal-clear-filters" id="modalClearFiltersBtn" type="button">Limpar filtros</button>
       </div>
-      <div class="table-wrap modal-table"><table><thead><tr id="modalHeader"><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th></tr></thead><tbody id="modalRows"></tbody></table></div>
+      <div class="table-wrap modal-table"><table><thead><tr id="modalHeader"><th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>AT</th><th>Driver ID</th><th>Driver</th></tr></thead><tbody id="modalRows"></tbody></table></div>
     </form>
   </dialog>
 

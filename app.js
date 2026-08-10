@@ -44,6 +44,7 @@
       status: '',
       city: '',
       bairro: '',
+      at: '',
       driver: '',
       sort: 'default'
     },
@@ -188,6 +189,7 @@
     modalStatusFilter: document.getElementById('modalStatusFilter'),
     modalCityFilter: document.getElementById('modalCityFilter'),
     modalBairroFilter: document.getElementById('modalBairroFilter'),
+    modalAtFilter: document.getElementById('modalAtFilter'),
     modalDriverFilter: document.getElementById('modalDriverFilter'),
     modalSortFilter: document.getElementById('modalSortFilter'),
     modalClearFiltersBtn: document.getElementById('modalClearFiltersBtn'),
@@ -244,6 +246,8 @@
     bairro: ['bairro', 'district', 'neighborhood', 'receiver district', 'recipient district'],
     driverId: ['driver id', 'driver_id', 'driverid', 'id driver', 'id motorista', 'motorista id'],
     driver: ['driver name', 'nome do motorista', 'motorista', 'driver'],
+    at: ['at', 'nome da at', 'at name', 'rota', 'route', 'route name', 'nome rota', 'nome da rota'],
+    atNumber: ['numero da at', 'número da at', 'at number', 'at id', 'id da at', 'codigo da at', 'código da at', 'route id', 'trip id'],
     tracking: ['sls tracking', 'tracking', 'rastreio', 'awb', 'br', 'order id', 'shipment id'],
     cep: ['zipcode name', 'zipcode', 'zip code', 'cep', 'postal code', 'coluna 1']
   };
@@ -254,6 +258,8 @@
     cep: 'CEP',
     city: 'Cidade',
     bairro: 'Bairro',
+    at: 'AT / Rota',
+    atNumber: 'Número da AT',
     driverId: 'Driver ID',
     driver: 'Driver'
   };
@@ -836,6 +842,8 @@
         cep: cepOf(row),
         city: value(row, 'city'),
         bairro: value(row, 'bairro'),
+        at: raw(row, 'at'),
+        atNumber: raw(row, 'atNumber'),
         driverId: value(row, 'driverId'),
         driver: value(row, 'driver'),
         __file: row.__file || '',
@@ -1072,13 +1080,15 @@
   function applyCloudRows(payload) {
     const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     state.rows = rows;
-    state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'driverId', 'driver'];
+    state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'at', 'atNumber', 'driverId', 'driver'];
     state.detectedColumns = {
       tracking: 'tracking',
       status: 'status',
       cep: 'cep',
       city: 'city',
       bairro: 'bairro',
+      at: 'at',
+      atNumber: 'atNumber',
       driverId: 'driverId',
       driver: 'driver'
     };
@@ -1706,6 +1716,13 @@
     return Boolean(info.id || (info.name && info.name !== 'Sem driver'));
   }
 
+  function atOf(row) {
+    const name = raw(row, 'at');
+    const code = raw(row, 'atNumber');
+    if (name && code && low(name) !== low(code)) return `${name} - ${code}`;
+    return name || code || 'Sem AT';
+  }
+
   function cepOf(row) {
     const digits = clean(raw(row, 'cep')).replace(/\D/g, '');
     return digits ? digits.padStart(8, '0').slice(-8) : '';
@@ -1722,6 +1739,7 @@
       if (rawValue && rawValue !== fallback) return rawValue;
       return mappedValue || rawValue || fallback;
     }
+    if (type === 'at') return atOf(row);
     if (type === 'driver') return driverInfo(row).name;
     if (type === 'driverId') return driverInfo(row).id || 'Sem ID';
     const fallbacks = {
@@ -1747,6 +1765,23 @@
     map.set(key, (map.get(key) || 0) + amount);
   }
 
+  function isOtherStatus(status) {
+    const normalized = normalizeStatus(status);
+    const primaryStatuses = new Set([
+      'Delivered',
+      'Delivering',
+      'Hub_Received',
+      'Return_Hub_Received',
+      'Hub_Assigned',
+      'Hub_Assigning',
+      'SOC_LHTransported',
+      'OnHold',
+      'Avaria',
+      '(vazio)'
+    ]);
+    return !primaryStatuses.has(normalized);
+  }
+
   function rowMatches(row, filter) {
     const status = statusOf(row);
     if (filter.tracking && value(row, 'tracking') !== filter.tracking) return false;
@@ -1754,9 +1789,11 @@
     if (filter.kind === 'Hub_Received' && !isReceived(status)) return false;
     if (filter.kind === 'Hub_Assigned' && !isAssigned(status)) return false;
     if (filter.kind === 'Avaria' && !isDamageRow(row)) return false;
-    if (filter.kind && !['all', 'notDelivered', 'Hub_Received', 'Hub_Assigned', 'Avaria'].includes(filter.kind) && status !== filter.kind) return false;
+    if (filter.kind === 'Other' && !isOtherStatus(status)) return false;
+    if (filter.kind && !['all', 'notDelivered', 'Hub_Received', 'Hub_Assigned', 'Avaria', 'Other'].includes(filter.kind) && status !== filter.kind) return false;
     if (filter.city && value(row, 'city') !== filter.city) return false;
     if (filter.bairro && value(row, 'bairro') !== filter.bairro) return false;
+    if (filter.at && value(row, 'at') !== filter.at) return false;
     if (filter.driver && value(row, 'driver') !== filter.driver) return false;
     if (filter.missingDriver && hasDriverAssignment(row)) return false;
     return true;
@@ -1830,6 +1867,7 @@
       assigned: 0,
       socLH: 0,
       hold: 0,
+      other: 0,
       damage: 0,
       byReceived: new Map(),
       byAssigned: new Map(),
@@ -1861,6 +1899,7 @@
       if (status === 'Delivering') stats.delivering += 1;
       if (status === 'SOC_LHTransported') stats.socLH += 1;
       if (status === 'OnHold') stats.hold += 1;
+      if (isOtherStatus(status)) stats.other += 1;
       if (isReceived(status)) {
         stats.received += 1;
         bump(stats.byReceived, cityBairro);
@@ -1934,6 +1973,7 @@
       ['Delivering', stats.delivering, 'Em rota', 'Delivering'],
       ['SOC LH', stats.socLH, 'Transportado no line haul', 'SOC_LHTransported'],
       ['OnHold', stats.hold, percent(stats.hold, stats.total), 'OnHold'],
+      ['Outros', stats.other, 'Status fora do padrão', 'Other'],
       ['Avarias', stats.damage, 'BRs com avaria no dia', 'Avaria']
     ];
     els.kpis.innerHTML = items.map(([label, qty, hint, filter]) => `
@@ -2619,22 +2659,23 @@
 
     const filtered = cityRows.filter(row => !state.assignedMonitor.bairro || value(row, 'bairro') === state.assignedMonitor.bairro);
     const grouped = new Map();
-    filtered.forEach(row => bump(grouped, groupKey([value(row, 'city'), value(row, 'bairro')])));
+    filtered.forEach(row => bump(grouped, groupKey([value(row, 'city'), value(row, 'bairro'), value(row, 'at')])));
     const direction = state.assignedMonitor.sort === 'asc' ? 1 : -1;
 
     els.assignedTable.innerHTML = Array.from(grouped.entries())
       .map(([key, qty]) => {
-        const [city, bairro] = key.split('|');
-        return { city, bairro, qty };
+        const [city, bairro, at] = key.split('|');
+        return { city, bairro, at, qty };
       })
-      .sort((a, b) => (a.qty - b.qty) * direction || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'))
+      .sort((a, b) => (a.qty - b.qty) * direction || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR') || a.at.localeCompare(b.at, 'pt-BR'))
       .map(item => `<tr class="clickable">
         <td>${html(item.city)}</td>
         <td>${html(item.bairro)}</td>
+        <td>${html(item.at)}</td>
         <td>${number(item.qty)}</td>
-        <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'Hub_Assigned', city: item.city, bairro: item.bairro }))}'>Abrir</button></td>
+        <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'Hub_Assigned', city: item.city, bairro: item.bairro, at: item.at }))}'>Abrir</button></td>
       </tr>`)
-      .join('') || '<tr><td colspan="4">Nenhum Assigned encontrado.</td></tr>';
+      .join('') || '<tr><td colspan="5">Nenhum Assigned encontrado.</td></tr>';
 
     renderAssignedSearch(filtered);
   }
@@ -2650,7 +2691,7 @@
       <button class="list-row" type="button" data-open='${html(JSON.stringify({ kind: 'all', tracking: value(row, 'tracking') }))}'>
         <span>
           <strong>${html(value(row, 'tracking'))}</strong>
-          <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
+          <span>${html(displayStatusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | AT: ${html(value(row, 'at'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span>
         </span>
         <b class="severity normal">Abrir</b>
       </button>
@@ -2973,8 +3014,8 @@
     ensureRowIds();
     if (!state.importFiles.includes('Avarias manuais')) state.importFiles.push('Avarias manuais');
     if (!state.headers.length) {
-      state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'driver'];
-      state.detectedColumns = { tracking: 'tracking', status: 'status', cep: 'cep', city: 'city', bairro: 'bairro', driver: 'driver' };
+      state.headers = ['tracking', 'status', 'cep', 'city', 'bairro', 'at', 'atNumber', 'driver'];
+      state.detectedColumns = { tracking: 'tracking', status: 'status', cep: 'cep', city: 'city', bairro: 'bairro', at: 'at', atNumber: 'atNumber', driver: 'driver' };
       state.columns = { ...state.detectedColumns };
     }
     els.damageForm.reset();
@@ -3536,6 +3577,7 @@
       status: '',
       city: '',
       bairro: '',
+      at: '',
       driver: '',
       sort: 'default'
     };
@@ -3543,6 +3585,7 @@
     if (els.modalStatusFilter) els.modalStatusFilter.value = '';
     if (els.modalCityFilter) els.modalCityFilter.value = '';
     if (els.modalBairroFilter) els.modalBairroFilter.value = '';
+    if (els.modalAtFilter) els.modalAtFilter.value = '';
     if (els.modalDriverFilter) els.modalDriverFilter.value = '';
     if (els.modalSortFilter) els.modalSortFilter.value = 'default';
   }
@@ -3566,10 +3609,14 @@
     const bairroRows = state.modalFilters.city
       ? cityRows.filter(row => value(row, 'city') === state.modalFilters.city)
       : cityRows;
+    const atRows = state.modalFilters.bairro
+      ? bairroRows.filter(row => value(row, 'bairro') === state.modalFilters.bairro)
+      : bairroRows;
 
     fillModalSelect(els.modalStatusFilter, modalOptionList(baseRows, row => displayStatusOf(row)), 'Todos', state.modalFilters.status);
     fillModalSelect(els.modalCityFilter, modalOptionList(cityRows, row => value(row, 'city')), 'Todas', state.modalFilters.city);
     fillModalSelect(els.modalBairroFilter, modalOptionList(bairroRows, row => value(row, 'bairro')), 'Todos', state.modalFilters.bairro);
+    fillModalSelect(els.modalAtFilter, modalOptionList(atRows, row => value(row, 'at')), 'Todas', state.modalFilters.at);
     fillModalSelect(els.modalDriverFilter, modalOptionList(baseRows, row => value(row, 'driver')), 'Todos', state.modalFilters.driver);
     if (els.modalSortFilter) els.modalSortFilter.value = state.modalFilters.sort || 'default';
     if (els.modalSearch) els.modalSearch.value = state.modalFilters.search || '';
@@ -3578,6 +3625,7 @@
   function modalSortValue(row, sort) {
     if (sort === 'city') return value(row, 'city');
     if (sort === 'bairro') return value(row, 'bairro');
+    if (sort === 'at') return value(row, 'at');
     if (sort === 'status') return displayStatusOf(row);
     if (sort === 'driver') return value(row, 'driver') || value(row, 'driverId');
     if (sort === 'tracking') return value(row, 'tracking');
@@ -3591,6 +3639,7 @@
       if (filters.status && displayStatusOf(row) !== filters.status) return false;
       if (filters.city && value(row, 'city') !== filters.city) return false;
       if (filters.bairro && value(row, 'bairro') !== filters.bairro) return false;
+      if (filters.at && value(row, 'at') !== filters.at) return false;
       if (filters.driver && value(row, 'driver') !== filters.driver) return false;
       return !query || low(rowSearchText(row)).includes(query);
     });
@@ -3619,23 +3668,24 @@
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
+        <td>${html(value(row, 'at'))}</td>
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
       </tr>
     `;
-    }).join('') || `<tr><td colspan="${actionable || damageDetail ? 8 : 7}">Nada encontrado com os filtros atuais.</td></tr>`;
+    }).join('') || `<tr><td colspan="${actionable || damageDetail ? 9 : 8}">Nada encontrado com os filtros atuais.</td></tr>`;
   }
 
   function renderModalHeader() {
     if (isReceivedActionModal() || isDamageDetailModal()) {
-      els.modalHeader.innerHTML = '<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th><th>Tratativa</th>';
+      els.modalHeader.innerHTML = '<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>AT</th><th>Driver ID</th><th>Driver</th><th>Tratativa</th>';
       return;
     }
-    els.modalHeader.innerHTML = '<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Driver ID</th><th>Driver</th>';
+    els.modalHeader.innerHTML = '<th>Tracking</th><th>Status</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>AT</th><th>Driver ID</th><th>Driver</th>';
   }
 
   function isReceivedActionModal() {
-    return ['Hub_Received', 'SOC_LHTransported'].includes(state.currentFilter?.kind);
+    return ['Hub_Received', 'SOC_LHTransported', 'Other'].includes(state.currentFilter?.kind);
   }
 
   function isDamageDetailModal() {
@@ -3650,6 +3700,7 @@
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
+        <td>${html(value(row, 'at'))}</td>
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
         <td>${html(latestTreatmentOf(row, 'Avaria registrada'))}</td>
@@ -3658,10 +3709,13 @@
   }
 
   function renderReceivedActionRow(row) {
-    const baseKind = state.currentFilter?.kind === 'SOC_LHTransported' || isSocLH(statusOf(row))
+    const currentStatus = statusOf(row);
+    const baseKind = state.currentFilter?.kind === 'Other' || isOtherStatus(currentStatus)
+      ? currentStatus
+      : state.currentFilter?.kind === 'SOC_LHTransported' || isSocLH(currentStatus)
       ? 'SOC_LHTransported'
       : 'Hub_Received';
-    const baseLabel = isDamageRow(row) ? 'Avaria' : (baseKind === 'SOC_LHTransported' ? 'SOC LH' : 'Received');
+    const baseLabel = isDamageRow(row) ? 'Avaria' : (isOtherStatus(baseKind) ? baseKind : (baseKind === 'SOC_LHTransported' ? 'SOC LH' : 'Received'));
     return `
       <tr>
         <td>${html(value(row, 'tracking'))}</td>
@@ -3674,6 +3728,7 @@
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
         <td>${html(value(row, 'bairro'))}</td>
+        <td>${html(value(row, 'at'))}</td>
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
         <td>
@@ -3736,6 +3791,7 @@
       cepOf(row),
       value(row, 'city'),
       value(row, 'bairro'),
+      value(row, 'at'),
       value(row, 'driverId'),
       value(row, 'driver'),
       latestTreatmentOf(row, ''),
@@ -3752,7 +3808,7 @@
     const rows = state.rows.filter(row => low(rowSearchText(row)).includes(query)).slice(0, 80);
     els.searchResults.innerHTML = rows.map(row => `
       <button class="list-row" type="button" data-open='${html(JSON.stringify({ kind: 'all', tracking: value(row, 'tracking') }))}'>
-        <span><strong>${html(value(row, 'tracking'))}</strong><span>${html(statusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span></span>
+        <span><strong>${html(value(row, 'tracking'))}</strong><span>${html(statusOf(row))} | ${html(cepOf(row))} | ${html(value(row, 'city'))} | ${html(value(row, 'bairro'))} | AT: ${html(value(row, 'at'))} | ${html(value(row, 'driverId'))} | ${html(value(row, 'driver'))}</span></span>
         <b class="severity normal">Abrir</b>
       </button>
     `).join('') || '<p class="muted">Nada encontrado.</p>';
@@ -3766,6 +3822,7 @@
       cepOf(row),
       value(row, 'city'),
       value(row, 'bairro'),
+      value(row, 'at'),
       value(row, 'driverId'),
       value(row, 'driver'),
       ...(includeTreatment ? [latestStatusActionOf(row), latestTreatmentOf(row, '')] : [])
@@ -3838,13 +3895,14 @@
 
   function downloadRowsCsv(rows, filename) {
     const includeTreatment = rows.some(row => row.__txfTratativa || row.__txfStatusAction);
-    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'Driver ID', 'Driver'].concat(includeTreatment ? ['Ação', 'Tratativa'] : []);
+    const header = ['Tracking', 'Status', 'CEP', 'Cidade', 'Bairro', 'AT', 'Driver ID', 'Driver'].concat(includeTreatment ? ['Ação', 'Tratativa'] : []);
     const body = rows.map(row => [
       value(row, 'tracking'),
       statusOf(row),
       cepOf(row),
       value(row, 'city'),
       value(row, 'bairro'),
+      value(row, 'at'),
       value(row, 'driverId'),
       value(row, 'driver'),
       ...(includeTreatment ? [latestStatusActionOf(row), latestTreatmentOf(row, '')] : [])
@@ -4109,11 +4167,18 @@
     els.modalCityFilter.addEventListener('change', () => {
       state.modalFilters.city = els.modalCityFilter.value;
       state.modalFilters.bairro = '';
+      state.modalFilters.at = '';
       renderModalFilterOptions();
       renderModalRows();
     });
     els.modalBairroFilter.addEventListener('change', () => {
       state.modalFilters.bairro = els.modalBairroFilter.value;
+      state.modalFilters.at = '';
+      renderModalFilterOptions();
+      renderModalRows();
+    });
+    els.modalAtFilter.addEventListener('change', () => {
+      state.modalFilters.at = els.modalAtFilter.value;
       renderModalRows();
     });
     els.modalDriverFilter.addEventListener('change', () => {
