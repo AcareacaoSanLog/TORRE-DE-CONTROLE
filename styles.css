@@ -1324,19 +1324,6 @@ body.auth-checking .auth-card {
   outline: 0;
 }
 
-.received-status-cell {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.status-pill.avulso-marker {
-  min-width: 0;
-  padding: 4px 7px;
-  font-size: 10px;
-}
-
 .status-action-select:focus,
 .treatment-input:focus {
   border-color: var(--cyan);

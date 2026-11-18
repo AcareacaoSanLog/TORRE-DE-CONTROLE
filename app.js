@@ -3994,17 +3994,15 @@
     const baseLabel = isDamageRow(row)
       ? 'Avaria'
       : (isOtherStatus(baseKind) ? baseKind : (baseKind === 'SOC_LHTransported' ? 'SOC LH' : 'Received'));
+    const treatmentText = latestTreatmentOf(row, '') || (isAvulsoRow(row) ? 'AVULSO' : '');
     return `
       <tr>
         <td>${html(value(row, 'tracking'))}</td>
         <td>
-          <div class="received-status-cell">
-            <select class="status-action-select" data-status-row="${html(row.__txfRowId || '')}">
-              <option value="${html(baseKind)}" ${latestStatusActionOf(row) === 'Criado AT' ? '' : 'selected'}>${html(baseLabel)}</option>
-              <option value="Criado AT" ${latestStatusActionOf(row) === 'Criado AT' ? 'selected' : ''}>Criado AT</option>
-            </select>
-            ${isAvulsoRow(row) ? '<span class="status-pill st-avulso avulso-marker">AVULSO</span>' : ''}
-          </div>
+          <select class="status-action-select" data-status-row="${html(row.__txfRowId || '')}">
+            <option value="${html(baseKind)}" ${latestStatusActionOf(row) === 'Criado AT' ? '' : 'selected'}>${html(baseLabel)}</option>
+            <option value="Criado AT" ${latestStatusActionOf(row) === 'Criado AT' ? 'selected' : ''}>Criado AT</option>
+          </select>
         </td>
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
@@ -4012,7 +4010,7 @@
         <td>${html(value(row, 'driverId'))}</td>
         <td>${html(value(row, 'driver'))}</td>
         <td>
-          <textarea class="treatment-input" data-treatment-row="${html(row.__txfRowId || '')}" rows="2" placeholder="Descreva a tratativa realizada">${html(latestTreatmentOf(row, ''))}</textarea>
+          <textarea class="treatment-input" data-treatment-row="${html(row.__txfRowId || '')}" rows="2" placeholder="Descreva a tratativa realizada">${html(treatmentText)}</textarea>
         </td>
       </tr>
     `;
@@ -4068,6 +4066,8 @@
     return [
       value(row, 'tracking'),
       statusOf(row),
+      displayStatusOf(row),
+      isAvulsoRow(row) ? 'AVULSO' : '',
       cepOf(row),
       value(row, 'city'),
       value(row, 'bairro'),
