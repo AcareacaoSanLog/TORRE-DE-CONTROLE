@@ -1211,8 +1211,19 @@ body.auth-checking .auth-card {
   text-transform: uppercase;
 }
 
+.avulso-search {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .damage-form input,
-.damage-form textarea {
+.damage-form textarea,
+.avulso-search input {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1225,7 +1236,8 @@ body.auth-checking .auth-card {
 }
 
 .damage-form input:focus,
-.damage-form textarea:focus {
+.damage-form textarea:focus,
+.avulso-search input:focus {
   border-color: var(--cyan);
   box-shadow: 0 0 0 2px rgba(12, 214, 210, .14);
 }
@@ -2065,6 +2077,7 @@ select {
 .kpi:nth-child(5)::before { background: var(--cyan); }
 .kpi:nth-child(6)::before { background: var(--blue); }
 .kpi:nth-child(7)::before { background: var(--red); }
+.kpi:nth-child(10)::before { background: var(--cyan); }
 
 .kpi:hover {
   outline: 2px solid #2c8dff;
@@ -2336,6 +2349,7 @@ select {
 .kpi:nth-child(5) span { color: var(--cyan); }
 .kpi:nth-child(6) span { color: var(--blue); }
 .kpi:nth-child(7) span { color: var(--red); }
+.kpi:nth-child(10) span { color: var(--cyan); }
 
 .kpi span {
   font-weight: 950;

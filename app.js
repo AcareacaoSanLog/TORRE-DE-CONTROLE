@@ -54,6 +54,7 @@
     actionPlanText: '',
     history: [],
     damageRegistry: {},
+    avulsoRegistry: {},
     treatmentRegistry: {},
     manualCepRegistry: {},
     routeCity: '',
@@ -160,6 +161,12 @@
     damageBairroPreview: document.getElementById('damageBairroPreview'),
     damageStats: document.getElementById('damageStats'),
     damageTable: document.getElementById('damageTable'),
+    avulsoForm: document.getElementById('avulsoForm'),
+    avulsoTrackings: document.getElementById('avulsoTrackings'),
+    avulsoMessage: document.getElementById('avulsoMessage'),
+    avulsoCount: document.getElementById('avulsoCount'),
+    avulsoSearch: document.getElementById('avulsoSearch'),
+    avulsoTable: document.getElementById('avulsoTable'),
     routeCitySelect: document.getElementById('routeCitySelect'),
     routeCityChecklist: document.getElementById('routeCityChecklist'),
     routeDefaultBtn: document.getElementById('routeDefaultBtn'),
@@ -235,6 +242,7 @@
 
   const HISTORY_KEY = 'txf-plus-import-history-v1';
   const MANUAL_CEP_KEY = 'txf-plus-manual-cep-registry-v1';
+  const AVULSO_KEY = 'txf-plus-avulso-registry-v1';
 
   const HISTORY_LIMIT = 120;
 
@@ -272,8 +280,8 @@
     Delivering: { label: 'Delivering', className: 'st-delivering', tone: 'normal' },
     Hub_Received: { label: 'Received', className: 'st-received', tone: 'high' },
     Return_Hub_Received: { label: 'Received retorno', className: 'st-received', tone: 'high' },
-    Hub_Assigned: { label: 'Assigned', className: 'st-assigned', tone: 'normal' },
-    Hub_Assigning: { label: 'Assigning', className: 'st-assigned', tone: 'normal' },
+    Hub_Assigned: { label: 'Hub Atribuído', className: 'st-assigned', tone: 'normal' },
+    Hub_Assigning: { label: 'Atribuindo', className: 'st-assigned', tone: 'normal' },
     SOC_LHTransported: { label: 'SOC LH', className: 'st-soc-lh', tone: 'normal' },
     Avaria: { label: 'Avaria', className: 'st-damage', tone: 'high' },
     OnHold: { label: 'OnHold', className: 'st-hold', tone: 'critical' },
@@ -418,6 +426,44 @@
 
   function persistManualCepRegistry() {
     localStorage.setItem(MANUAL_CEP_KEY, JSON.stringify(normalizedManualCepRegistry()));
+  }
+
+  function normalizeAvulsoRegistry(registry) {
+    return Object.entries(registry || {}).reduce((normalized, [key, item]) => {
+      const tracking = clean(item?.tracking || key).toUpperCase();
+      const trackingId = trackingKey(tracking);
+      if (!trackingId) return normalized;
+      normalized[trackingId] = {
+        tracking,
+        createdAt: item?.createdAt || item?.updatedAt || '',
+        updatedAt: item?.updatedAt || item?.createdAt || '',
+        deleted: Boolean(item?.deleted)
+      };
+      return normalized;
+    }, {});
+  }
+
+  function loadAvulsoRegistry() {
+    try {
+      state.avulsoRegistry = normalizeAvulsoRegistry(JSON.parse(localStorage.getItem(AVULSO_KEY) || '{}'));
+    } catch (error) {
+      state.avulsoRegistry = {};
+    }
+  }
+
+  function persistAvulsoRegistry() {
+    localStorage.setItem(AVULSO_KEY, JSON.stringify(normalizedAvulsoRegistry()));
+  }
+
+  function normalizedAvulsoRegistry() {
+    return normalizeAvulsoRegistry(state.avulsoRegistry);
+  }
+
+  function avulsoEntries() {
+    return Object.entries(normalizedAvulsoRegistry())
+      .filter(([, item]) => !item.deleted)
+      .map(([key, item]) => ({ key, ...item }))
+      .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
   }
 
   function normalizedManualCepRegistry() {
@@ -712,6 +758,7 @@
     state.actionPlanText = '';
     state.history = [];
     state.damageRegistry = {};
+    state.avulsoRegistry = {};
     state.treatmentRegistry = {};
     state.routeCity = '';
     state.routeCities = [];
@@ -1018,6 +1065,30 @@
     return merged;
   }
 
+  function mergeAvulsoRegistries(...registries) {
+    const merged = {};
+    registries.forEach(registry => {
+      Object.entries(normalizeAvulsoRegistry(registry)).forEach(([key, incoming]) => {
+        const current = merged[key];
+        if (!current) {
+          merged[key] = incoming;
+          return;
+        }
+        const currentMs = registryDateMs(current.updatedAt);
+        const incomingMs = registryDateMs(incoming.updatedAt);
+        if (incomingMs > currentMs || (incomingMs === currentMs && incoming.deleted && !current.deleted)) {
+          merged[key] = incoming;
+        } else if (incomingMs === currentMs && !current.deleted && !incoming.deleted) {
+          merged[key] = {
+            ...current,
+            createdAt: current.createdAt || incoming.createdAt
+          };
+        }
+      });
+    });
+    return merged;
+  }
+
   function mergeManualCepRegistries(...registries) {
     return normalizeManualCepRegistry(Object.assign({}, ...registries.map(registry => registry || {})));
   }
@@ -1046,6 +1117,8 @@
       payload.damageRegistry || {},
       state.damageRegistry || {}
     );
+    state.avulsoRegistry = mergeAvulsoRegistries(payload.avulsoRegistry || {}, state.avulsoRegistry || {});
+    persistAvulsoRegistry();
     state.manualCepRegistry = mergeManualCepRegistries(payload.manualCepRegistry || {}, state.manualCepRegistry || {});
     persistManualCepRegistry();
     if (options.applyToRows && state.rows.length) {
@@ -1088,6 +1161,8 @@
       payload?.damageRegistry || {},
       state.damageRegistry || {}
     );
+    state.avulsoRegistry = mergeAvulsoRegistries(payload?.avulsoRegistry || {}, state.avulsoRegistry || {});
+    persistAvulsoRegistry();
     state.manualCepRegistry = mergeManualCepRegistries(payload?.manualCepRegistry || {}, state.manualCepRegistry || {});
     persistManualCepRegistry();
     state.treatmentRegistry = mergeTreatmentRegistries(
@@ -1132,11 +1207,11 @@
       setCloudStatus('Nuvem: entre com login para salvar.', 'warn');
       return false;
     }
-    if (!state.rows.length) {
+    if (!state.rows.length && !Object.keys(state.avulsoRegistry || {}).length) {
       window.clearTimeout(cloudSaveTimer);
       cloudSaveTimer = null;
       cloudSavePending = false;
-      setCloudStatus('Nuvem: importe uma planilha antes de salvar.', 'warn');
+      setCloudStatus('Nuvem: não há dados para salvar.', 'warn');
       return false;
     }
     if (!supabaseClient) {
@@ -1152,6 +1227,10 @@
     const saveStartedVersion = localEditVersion;
 
     try {
+      if (!state.rows.length) {
+        const latestPayload = await fetchLatestCloudPayload();
+        if (latestPayload) applyCloudRows(latestPayload);
+      }
       captureTreatmentRegistryFromRows();
       setCloudStatus('Nuvem: sincronizando tratativas antes de salvar...', 'warn');
       const canProtectSave = await syncProtectedDataFromCloud({ silent: true, applyToRows: false });
@@ -1167,6 +1246,7 @@
         files: state.importFiles.slice(),
         rows: normalizedCloudRows(),
         damageRegistry: normalizedDamageRegistry(),
+        avulsoRegistry: normalizedAvulsoRegistry(),
         treatmentRegistry: normalizedTreatmentRegistry(),
         manualCepRegistry: normalizedManualCepRegistry(),
         history: normalizedHistory()
@@ -1200,7 +1280,7 @@
     } finally {
       cloudSaveInProgress = false;
       const hasEditsAfterSaveStarted = localEditVersion > saveStartedVersion;
-      if ((cloudSavePending || hasEditsAfterSaveStarted) && state.rows.length && currentSession?.access_token && supabaseClient) {
+      if ((cloudSavePending || hasEditsAfterSaveStarted) && (state.rows.length || Object.keys(state.avulsoRegistry || {}).length) && currentSession?.access_token && supabaseClient) {
         cloudSavePending = true;
         window.clearTimeout(cloudSaveTimer);
         cloudSaveTimer = window.setTimeout(() => saveCloudState(), 900);
@@ -1211,7 +1291,7 @@
   }
 
   function scheduleCloudSave(delay = 900, options = {}) {
-    if (!state.rows.length || !currentSession?.access_token) return;
+    if ((!state.rows.length && !Object.keys(state.avulsoRegistry || {}).length) || !currentSession?.access_token) return;
     if (options.markDirty !== false) markCloudDirty();
     else cloudSavePending = true;
     window.clearTimeout(cloudSaveTimer);
@@ -1850,6 +1930,7 @@
       hold: 0,
       other: 0,
       damage: 0,
+      avulsos: avulsoEntries().length,
       byReceived: new Map(),
       byAssigned: new Map(),
       byAssignedCity: new Map(),
@@ -1950,16 +2031,17 @@
       ['Total', stats.total, 'Todos os pacotes', 'all'],
       ['Delivered', stats.delivered, percent(stats.delivered, stats.total), 'Delivered'],
       ['Received', stats.received, 'Aguardando avanço', 'Hub_Received'],
-      ['Assigned', stats.assigned, 'Atribuídos no hub', 'Hub_Assigned'],
+      ['Hub Atribuído', stats.assigned, 'Rota já atribuída', 'Hub_Assigned'],
       ['Delivering', stats.delivering, 'Em rota', 'Delivering'],
       ['SOC LH', stats.socLH, 'Transportado no line haul', 'SOC_LHTransported'],
       ['OnHold', stats.hold, percent(stats.hold, stats.total), 'OnHold'],
       ['Outros', stats.other, 'Status fora do padrão', 'Other'],
-      ['Avarias', stats.damage, 'BRs com avaria no dia', 'Avaria']
+      ['Avarias', stats.damage, 'BRs com avaria no dia', 'Avaria'],
+      ['Avulsos', stats.avulsos, 'BRs avulsas cadastradas', { view: 'avulsos' }]
     ];
-    els.kpis.innerHTML = items.map(([label, qty, hint, filter]) => `
+    els.kpis.innerHTML = items.map(([label, qty, hint, action]) => `
       <article class="kpi">
-        <button type="button" data-filter="${html(filter)}">
+        <button type="button" ${typeof action === 'object' ? `data-view-jump="${html(action.view)}"` : `data-filter="${html(action)}"`}>
           <span>${html(label)}</span>
           <strong>${number(qty)}</strong>
           <small>${html(hint)}</small>
@@ -2024,13 +2106,13 @@
       `Faltam para SLA: ${number(needSla)}`,
       `Faltam para DS: ${number(needDs)}`,
       `Received: ${number(stats.received)}`,
-      `Hub Assigned: ${number(stats.assigned)}`,
+      `Hub Atribuído: ${number(stats.assigned)}`,
       `Delivering: ${number(stats.delivering)}`,
       `SOC LH: ${number(stats.socLH)}`,
       `OnHold: ${number(stats.hold)}`,
       `Ritmo sugerido: ${number(perHour)} ${plural(perHour, 'pacote/hora', 'pacotes/hora')} por ${number(hoursLeft)} ${plural(hoursLeft, 'hora operacional restante', 'horas operacionais restantes')}`,
       '',
-      'Prioridade: tratar OnHold, Received e Assigned nas cidades com maior volume.',
+      'Prioridade: tratar OnHold, Received e Hub Atribuído nas cidades com maior volume.',
       ...topPending.map(([city, qty], index) => `${index + 1}. ${city}: ${number(qty)} pendentes`)
     ].join('\n');
   }
@@ -2054,7 +2136,7 @@
     const rows = [
       ['OnHold', stats.hold, 'Pacotes precisam de tratativa operacional', 'critical', 'OnHold'],
       ['Received', stats.received, 'Pacotes aguardando avanço de status', 'high', 'Hub_Received'],
-      ['Assigned', stats.assigned, 'Pacotes atribuídos ou em separação', 'normal', 'Hub_Assigned'],
+      ['Hub Atribuído', stats.assigned, 'Rota já atribuída no hub', 'normal', 'Hub_Assigned'],
       ['Delivering', stats.delivering, 'Pacotes em rota para acompanhar', 'normal', 'Delivering'],
       ['SOC LH', stats.socLH, 'Pacotes transportados no line haul', 'normal', 'SOC_LHTransported']
     ].filter(item => item[1] > 0);
@@ -2087,7 +2169,7 @@
       Delivering: 'Delivering',
       SOC_LHTransported: 'SOC LH',
       Hub_Received: 'Received - tratativa',
-      Hub_Assigned: 'Hub Assigned',
+      Hub_Assigned: 'Hub Atribuído',
       OnHold: 'OnHold',
       Avaria: 'Avarias do dia'
     }[kind] || `Detalhes: ${kind}`;
@@ -2095,7 +2177,7 @@
 
   function renderCityRadar(stats) {
     renderCityBars(els.cityRadar, stats.byDeliveredCity, 'Delivered', 'Nenhuma BR entregue identificada por cidade.');
-    renderCityBars(els.assignedRadar, stats.byAssignedCity, 'Hub_Assigned', 'Nenhuma BR em Hub Assigned.');
+    renderCityBars(els.assignedRadar, stats.byAssignedCity, 'Hub_Assigned', 'Nenhuma BR em Hub Atribuído.');
   }
 
   function renderCityBars(target, sourceMap, kind, emptyText) {
@@ -2119,7 +2201,7 @@
 
     state.mapSummary = regions.map(region => {
       const topCities = Array.from(region.cities.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
-      return `${region.name}: ${number(region.pending)} pendentes | OnHold ${number(region.hold)} | Received ${number(region.received)} | Assigned ${number(region.assigned)} | Top: ${topCities.map(([city, qty]) => `${city} (${number(qty)})`).join(', ')}`;
+      return `${region.name}: ${number(region.pending)} pendentes | OnHold ${number(region.hold)} | Received ${number(region.received)} | Hub Atribuído ${number(region.assigned)} | Top: ${topCities.map(([city, qty]) => `${city} (${number(qty)})`).join(', ')}`;
     }).join('\n');
 
     els.operationMap.innerHTML = regions.length ? regions.map(region => {
@@ -2136,7 +2218,7 @@
             <span><b>${number(region.pending)}</b>Pendentes</span>
             <span><b>${number(region.hold)}</b>OnHold</span>
             <span><b>${number(region.received)}</b>Received</span>
-            <span><b>${number(region.assigned)}</b>Assigned</span>
+            <span><b>${number(region.assigned)}</b>Hub Atribuído</span>
           </div>
           <div class="city-chips">
             ${topCities.map(([city, qty]) => `<button class="city-chip" type="button" data-city="${html(city)}">${html(city)} ${number(qty)}</button>`).join('')}
@@ -2216,7 +2298,7 @@
     }
     if (stats.assigned > 0) {
       items.push({
-        title: `Conferir Assigned (${number(stats.assigned)})`,
+        title: `Conferir Hub Atribuído (${number(stats.assigned)})`,
         detail: 'Validar atribuição, separação e próximos passos no hub.',
         filter: 'Hub_Assigned',
         severity: 'normal'
@@ -2258,7 +2340,7 @@
 
     const assignedText = assignedGroups.length
       ? assignedGroups.map((item, index) => `${index + 1}. ${item.city} / ${item.bairro} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
-      : 'Sem BR em Hub Assigned no momento.';
+      : 'Sem BR em Hub Atribuído no momento.';
 
     const deliveringText = deliveringGroups.length
       ? deliveringGroups.map((item, index) => `${index + 1}. ${item.city} / ${item.bairro} — ${number(item.qty)} ${plural(item.qty, 'BR', 'BRs')}`).join('\n')
@@ -2277,11 +2359,11 @@
       `🕒 Atualizado às ${managerTimeText}`,
       '',
       '🎯 INDICADORES OPERACIONAIS',
-      `🧭 Hub Assigned: ${number(snapshot.assigned)} ${plural(snapshot.assigned, 'BR', 'BRs')}`,
+      `🧭 Hub Atribuído: ${number(snapshot.assigned)} ${plural(snapshot.assigned, 'BR', 'BRs')}`,
       `🚚 Delivering: ${number(snapshot.delivering)} ${plural(snapshot.delivering, 'BR', 'BRs')}`,
       `⛔ OnHold: ${number(snapshot.hold)} ${plural(snapshot.hold, 'BR', 'BRs')}`,
       '',
-      '🧭 HUB ASSIGNED — CIDADE/BAIRRO E QTD',
+      '🧭 HUB ATRIBUÍDO — CIDADE/BAIRRO E QTD',
       assignedText,
       '',
       '🚚 DELIVERING — CIDADE/BAIRRO E QTD',
@@ -2371,7 +2453,7 @@
       ['Delivered', snapshot.delivered, deltaValue(snapshot, previous, 'delivered')],
       ['Pendentes', snapshot.pending, deltaValue(snapshot, previous, 'pending')],
       ['Received', snapshot.received, deltaValue(snapshot, previous, 'received')],
-      ['Assigned', snapshot.assigned, deltaValue(snapshot, previous, 'assigned')],
+      ['Hub Atribuído', snapshot.assigned, deltaValue(snapshot, previous, 'assigned')],
       ['SOC LH', snapshot.socLH, deltaValue(snapshot, previous, 'socLH')],
       ['OnHold', snapshot.hold, deltaValue(snapshot, previous, 'hold')],
       ['SLA', snapshot.sla, previous ? snapshot.sla - previous.sla : null, 'p.p.']
@@ -2397,7 +2479,7 @@
   function criticalMetrics() {
     return [
       { key: 'received', label: 'Received' },
-      { key: 'assigned', label: 'Assigned' },
+      { key: 'assigned', label: 'Hub Atribuído' },
       { key: 'socLH', label: 'SOC LH' },
       { key: 'hold', label: 'OnHold' }
     ];
@@ -2510,7 +2592,7 @@
         <span class="history-stat"><b>${number(item.delivered)}</b><small>Delivered</small></span>
         <span class="history-stat"><b>${number(item.pending)}</b><small>Pendentes</small></span>
         <span class="history-stat"><b>${number(item.received)}</b><small>Received</small></span>
-        <span class="history-stat"><b>${number(item.assigned)}</b><small>Assigned</small></span>
+        <span class="history-stat"><b>${number(item.assigned)}</b><small>Hub Atribuído</small></span>
         <span class="history-stat"><b>${number(item.socLH)}</b><small>SOC LH</small></span>
         <span class="history-stat"><b>${number(item.hold)}</b><small>OnHold</small></span>
       </div>
@@ -2655,7 +2737,7 @@
         <td>${number(item.qty)}</td>
         <td><button class="mini-button" data-open='${html(JSON.stringify({ kind: 'Hub_Assigned', city: item.city, bairro: item.bairro }))}'>Abrir</button></td>
       </tr>`)
-      .join('') || '<tr><td colspan="4">Nenhum Assigned encontrado.</td></tr>';
+      .join('') || '<tr><td colspan="4">Nenhum Hub Atribuído encontrado.</td></tr>';
 
     renderAssignedSearch(filtered);
   }
@@ -2675,7 +2757,7 @@
         </span>
         <b class="severity normal">Abrir</b>
       </button>
-    `).join('') || '<p class="muted">Nenhuma BR em Assigned encontrada.</p>';
+    `).join('') || '<p class="muted">Nenhuma BR em Hub Atribuído encontrada.</p>';
   }
 
   function socLhMonitorRows() {
@@ -3048,6 +3130,93 @@
     `).join('') || '<tr><td colspan="7">Nenhuma avaria cadastrada.</td></tr>';
   }
 
+  function setAvulsoMessage(message, type = '') {
+    if (!els.avulsoMessage) return;
+    els.avulsoMessage.textContent = message;
+    els.avulsoMessage.className = type ? `muted ${type}` : 'muted';
+  }
+
+  function parseAvulsoTrackings() {
+    return clean(els.avulsoTrackings?.value)
+      .split(/[\s,;]+/)
+      .map(item => clean(item).toUpperCase())
+      .filter(item => item && item !== 'SEM TRACKING');
+  }
+
+  function addAvulsoEntries(event) {
+    event.preventDefault();
+    const trackings = parseAvulsoTrackings();
+    if (!trackings.length) {
+      setAvulsoMessage('Informe ao menos uma BR.', 'warn');
+      els.avulsoTrackings.focus();
+      return;
+    }
+
+    let added = 0;
+    let duplicates = 0;
+    trackings.forEach(tracking => {
+      const key = trackingKey(tracking);
+      const existing = state.avulsoRegistry[key];
+      if (existing && !existing.deleted) {
+        duplicates += 1;
+        return;
+      }
+      const now = new Date().toISOString();
+      state.avulsoRegistry[key] = {
+        tracking,
+        createdAt: now,
+        updatedAt: now,
+        deleted: false
+      };
+      added += 1;
+    });
+
+    if (added) {
+      persistAvulsoRegistry();
+      els.avulsoForm.reset();
+      renderAll();
+      scheduleCloudSave(350);
+    } else {
+      renderAvulsoView();
+    }
+    const addedText = `${number(added)} ${plural(added, 'BR avulsa adicionada', 'BRs avulsas adicionadas')}`;
+    const duplicateText = duplicates ? `; ${number(duplicates)} ${plural(duplicates, 'duplicada ignorada', 'duplicadas ignoradas')}` : '';
+    setAvulsoMessage(`${addedText}${duplicateText}.`, duplicates && !added ? 'warn' : '');
+  }
+
+  function removeAvulsoEntry(key) {
+    const item = state.avulsoRegistry[key];
+    if (!item || item.deleted || !confirm(`Remover a BR avulsa ${item.tracking}?`)) return;
+    state.avulsoRegistry[key] = {
+      ...item,
+      deleted: true,
+      updatedAt: new Date().toISOString()
+    };
+    persistAvulsoRegistry();
+    renderAll();
+    scheduleCloudSave(350);
+  }
+
+  function renderAvulsoView() {
+    const entries = avulsoEntries();
+    const search = low(els.avulsoSearch?.value || '');
+    const visible = search ? entries.filter(item => low(item.tracking).includes(search)) : entries;
+    if (els.avulsoCount) {
+      els.avulsoCount.textContent = `${number(entries.length)} ${plural(entries.length, 'cadastrada', 'cadastradas')}`;
+    }
+    setAvulsoMessage(`${number(entries.length)} ${plural(entries.length, 'BR avulsa cadastrada', 'BRs avulsas cadastradas')}.`);
+    if (!els.avulsoTable) return;
+    els.avulsoTable.innerHTML = visible.map(item => {
+      const createdAt = Date.parse(item.createdAt);
+      const dateText = Number.isFinite(createdAt) ? new Date(createdAt).toLocaleString('pt-BR') : '-';
+      return `<tr>
+        <td>${html(item.tracking)}</td>
+        <td>${html(dateText)}</td>
+        <td><button class="mini-button danger" type="button" data-remove-avulso="${html(item.key)}">Remover</button></td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="3">${search ? 'Nenhuma BR encontrada.' : 'Nenhuma BR avulsa cadastrada.'}</td></tr>`;
+  }
+
   function routeStatsFor(rows) {
     return rows.reduce((acc, row) => {
       const status = statusOf(row);
@@ -3123,7 +3292,7 @@
       ['Delivered', stats.delivered, `${percent(stats.delivered, stats.total)} finalizado`],
       ['Pendentes', routePending(stats), 'Ainda exigem acompanhamento'],
       ['Received', stats.received, 'No hub ou avaria cadastrada'],
-      ['Assigned', stats.assigned, 'Atribuídos/separação'],
+      ['Hub Atribuído', stats.assigned, 'Rota já atribuída'],
       ['Delivering', stats.delivering, 'Em rota'],
       ['SOC LH', stats.socLH, 'Transportado no line haul'],
       ['OnHold', stats.hold, 'Com tratativa operacional']
@@ -3238,7 +3407,7 @@
       `Delivered: ${number(stats.delivered)}`,
       `Pendentes: ${number(routePending(stats))}`,
       `Received: ${number(stats.received)}`,
-      `Assigned: ${number(stats.assigned)}`,
+      `Hub Atribuído: ${number(stats.assigned)}`,
       `Delivering: ${number(stats.delivering)}`,
       `SOC LH: ${number(stats.socLH)}`,
       `OnHold: ${number(stats.hold)}`,
@@ -3268,6 +3437,7 @@
     renderManualCepRegistry();
     renderTables(stats);
     renderDamageView();
+    renderAvulsoView();
     renderRouteCalculator();
 
     if (activeViewId() === 'search') renderSearch();
@@ -3804,7 +3974,7 @@
   }
 
   function exportHistory() {
-    const header = ['Data', 'Arquivos', 'Total', 'Delivered', 'Pendentes', 'Received', 'Assigned', 'Delivering', 'SOC LH', 'OnHold', 'SLA'];
+    const header = ['Data', 'Arquivos', 'Total', 'Delivered', 'Pendentes', 'Received', 'Hub Atribuído', 'Delivering', 'SOC LH', 'OnHold', 'SLA'];
     const body = state.history.map(item => [
       new Date(item.date).toLocaleString('pt-BR'),
       item.files.join(' | '),
@@ -3926,7 +4096,7 @@
       const cityButton = event.target.closest('[data-city]');
       if (cityButton) {
         const kind = cityButton.dataset.cityKind || 'notDelivered';
-        const label = kind === 'Delivered' ? 'Entregues' : kind === 'Hub_Assigned' ? 'Hub Assigned' : 'Pendentes';
+        const label = kind === 'Delivered' ? 'Entregues' : kind === 'Hub_Assigned' ? 'Hub Atribuído' : 'Pendentes';
         openDetails({ kind, city: cityButton.dataset.city }, `${label}: ${cityButton.dataset.city}`);
       }
 
@@ -3945,6 +4115,9 @@
 
       const removeDamageButton = event.target.closest('[data-remove-damage]');
       if (removeDamageButton) removeDamageEntry(removeDamageButton.dataset.removeDamage);
+
+      const removeAvulsoButton = event.target.closest('[data-remove-avulso]');
+      if (removeAvulsoButton) removeAvulsoEntry(removeAvulsoButton.dataset.removeAvulso);
 
       const deleteCepButton = event.target.closest('[data-delete-cep]');
       if (deleteCepButton) removeManualCepEntry(deleteCepButton.dataset.deleteCep);
@@ -4003,6 +4176,8 @@
       event.preventDefault();
       addDamageEntry();
     });
+    els.avulsoForm.addEventListener('submit', addAvulsoEntries);
+    els.avulsoSearch.addEventListener('input', renderAvulsoView);
     els.manualCepForm?.addEventListener('submit', addManualCepEntry);
     els.routeDefaultBtn.addEventListener('click', () => {
       const cityGroups = groupedRouteStats(state.rows, row => value(row, 'city'));
@@ -4284,10 +4459,14 @@
   function startApp() {
     if (appStarted) {
       setAuthUi(currentSession);
+      loadAvulsoRegistry();
+      renderAll();
+      loadCloudState({ silent: true });
       return;
     }
     appStarted = true;
     loadManualCepRegistry();
+    loadAvulsoRegistry();
     loadHistory();
     installCloudSaveExitGuard();
     try {

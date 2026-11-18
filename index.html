@@ -16,7 +16,7 @@
       } catch (error) {}
     }());
   </script>
-  <link rel="stylesheet" href="styles.css?v=tratativas-dashboard-tempo-real-20260712">
+  <link rel="stylesheet" href="styles.css?v=avulsos-dashboard-20261118">
 </head>
 <body class="auth-locked auth-checking">
   <section class="auth-screen" id="authScreen">
@@ -63,7 +63,7 @@
         </button>
         <div class="tools-menu" id="monitorMenu">
           <button class="nav-button sub" data-view="received"><i data-lucide="package-open"></i><span>📥 Received</span></button>
-          <button class="nav-button sub" data-view="assigned"><i data-lucide="tags"></i><span>🏷️ Assigned</span></button>
+          <button class="nav-button sub" data-view="assigned"><i data-lucide="tags"></i><span>🏷️ Hub Atribuído</span></button>
           <button class="nav-button sub" data-view="soc-lh"><i data-lucide="truck"></i><span>🚚 SOC LH</span></button>
           <button class="nav-button sub" data-view="on-hold"><i data-lucide="octagon-pause"></i><span>⛔ OnHold</span></button>
         </div>
@@ -73,6 +73,7 @@
         <button class="nav-button" data-view="quality"><i data-lucide="shield-alert"></i><span>🛡️ Qualidade</span><b id="qualityBadge">0</b></button>
         <button class="nav-button" data-view="manager"><i data-lucide="briefcase-business"></i><span>👤 Gestor</span></button>
         <button class="nav-button" data-view="damage"><i data-lucide="triangle-alert"></i><span>⚠️ Avarias</span></button>
+        <button class="nav-button" data-view="avulsos"><i data-lucide="package-plus"></i><span>📦 Avulsos</span></button>
         <button class="nav-button" data-view="cities"><i data-lucide="map-pin"></i><span>📍 Cidades</span></button>
         <button class="nav-button" data-view="drivers"><i data-lucide="truck"></i><span>🚚 Drivers</span></button>
         <button class="nav-button tool-toggle" type="button" id="toolsToggle" aria-expanded="false">
@@ -207,8 +208,8 @@
             </div>
             <div id="priorityList" class="stack-list"></div>
             <div class="panel-subhead">
-              <h3>🏷️ BRs em Hub Assigned por cidade</h3>
-              <button class="text-button" data-filter="Hub_Assigned">Abrir Assigned</button>
+              <h3>🏷️ BRs em Hub Atribuído por cidade</h3>
+              <button class="text-button" data-filter="Hub_Assigned">Abrir Hub Atribuído</button>
             </div>
             <div id="assignedRadar" class="city-radar"></div>
           </section>
@@ -347,7 +348,7 @@
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Cidade/Bairro</th><th>Total</th><th>Delivered</th><th>Received</th><th>Assigned</th><th>Delivering</th><th>SOC LH</th><th>OnHold</th><th>Pendentes</th><th></th></tr>
+                  <tr><th>Cidade/Bairro</th><th>Total</th><th>Delivered</th><th>Received</th><th>Hub Atribuído</th><th>Delivering</th><th>SOC LH</th><th>OnHold</th><th>Pendentes</th><th></th></tr>
                 </thead>
                 <tbody id="routeBairroTable"></tbody>
               </table>
@@ -364,7 +365,7 @@
           <div class="table-wrap tall">
             <table>
               <thead>
-                <tr><th>Cidade</th><th>Total</th><th>Delivered</th><th>Received</th><th>Assigned</th><th>Delivering</th><th>SOC LH</th><th>OnHold</th><th>Pendentes</th><th></th></tr>
+                <tr><th>Cidade</th><th>Total</th><th>Delivered</th><th>Received</th><th>Hub Atribuído</th><th>Delivering</th><th>SOC LH</th><th>OnHold</th><th>Pendentes</th><th></th></tr>
               </thead>
               <tbody id="routeCityTable"></tbody>
             </table>
@@ -403,7 +404,7 @@
 
       <section class="view" id="assigned">
         <section class="panel">
-          <div class="panel-head"><h3>🏷️ BRs em Assigned por cidade/bairro</h3></div>
+          <div class="panel-head"><h3>🏷️ BRs em Hub Atribuído por cidade/bairro</h3></div>
           <div class="assigned-controls">
             <label>
               <span>Cidade</span>
@@ -535,6 +536,34 @@
         </div>
       </section>
 
+      <section class="view" id="avulsos">
+        <div class="damage-grid">
+          <section class="panel">
+            <div class="panel-head"><h3>📦 Adicionar BR avulsa</h3></div>
+            <form class="damage-form" id="avulsoForm">
+              <label>
+                <span>BRs</span>
+                <textarea id="avulsoTrackings" rows="7" placeholder="Digite ou cole as BRs"></textarea>
+              </label>
+              <button class="import-button damage-submit" type="submit">Adicionar BRs</button>
+              <p class="muted" id="avulsoMessage" aria-live="polite">0 BRs cadastradas.</p>
+            </form>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>📋 BRs avulsas cadastradas</h3>
+              <small id="avulsoCount">0 cadastradas</small>
+            </div>
+            <label class="avulso-search">
+              <span>Buscar BR</span>
+              <input id="avulsoSearch" type="search" placeholder="Digite a BR">
+            </label>
+            <div class="table-wrap tall"><table><thead><tr><th>BR</th><th>Data de cadastro</th><th></th></tr></thead><tbody id="avulsoTable"></tbody></table></div>
+          </section>
+        </div>
+      </section>
+
       <section class="view" id="cities">
         <div class="grid-2">
           <section class="panel">
@@ -578,7 +607,7 @@
       <section class="view" id="drivers">
         <section class="panel">
           <div class="panel-head"><h3>🚚 Drivers por status</h3></div>
-          <div class="table-wrap tall"><table><thead><tr><th>Driver</th><th>Delivered</th><th>Delivering</th><th>SOC LH</th><th>Received</th><th>Assigned</th><th>OnHold</th><th>Total</th><th></th></tr></thead><tbody id="driverTable"></tbody></table></div>
+          <div class="table-wrap tall"><table><thead><tr><th>Driver</th><th>Delivered</th><th>Delivering</th><th>SOC LH</th><th>Received</th><th>Hub Atribuído</th><th>OnHold</th><th>Total</th><th></th></tr></thead><tbody id="driverTable"></tbody></table></div>
         </section>
       </section>
 
@@ -660,6 +689,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cep-map.js?v=cep-atualizado-2-0-20260702"></script>
   <script src="driver-db.js"></script>
-  <script src="app.js?v=tratativas-dashboard-tempo-real-20260709"></script>
+  <script src="app.js?v=avulsos-dashboard-20261118"></script>
 </body>
 </html>
