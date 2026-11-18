@@ -1989,7 +1989,9 @@
   }
 
   function displayStatusOf(row) {
-    return isDamageRow(row) ? 'Avaria' : statusOf(row);
+    if (isDamageRow(row)) return 'Avaria';
+    if (isAvulsoRow(row)) return 'Avulso';
+    return statusOf(row);
   }
 
   function summarize() {
@@ -3984,7 +3986,11 @@
       : state.currentFilter?.kind === 'SOC_LHTransported' || isSocLH(currentStatus)
       ? 'SOC_LHTransported'
       : 'Hub_Received';
-    const baseLabel = isDamageRow(row) ? 'Avaria' : (isOtherStatus(baseKind) ? baseKind : (baseKind === 'SOC_LHTransported' ? 'SOC LH' : 'Received'));
+    const baseLabel = isDamageRow(row)
+      ? 'Avaria'
+      : isAvulsoRow(row)
+      ? 'Avulso'
+      : (isOtherStatus(baseKind) ? baseKind : (baseKind === 'SOC_LHTransported' ? 'SOC LH' : 'Received'));
     return `
       <tr>
         <td>${html(value(row, 'tracking'))}</td>
