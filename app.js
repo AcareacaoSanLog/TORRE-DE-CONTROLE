@@ -2695,6 +2695,7 @@
   }
 
   function renderReceivedMonitor() {
+    applyAvulsoRegistryToRows();
     applyTreatmentRegistryToRows();
     const rows = receivedMonitorRows();
     const cityOptions = Array.from(new Set(rows.map(row => value(row, 'city'))))
@@ -3844,6 +3845,7 @@
   }
 
   function openDetails(filter, title) {
+    applyAvulsoRegistryToRows();
     state.currentFilter = filter;
     state.currentRows = filteredRows(filter);
     els.modalTitle.textContent = title || 'Detalhes';
@@ -3925,6 +3927,7 @@
   }
 
   function renderModalRows() {
+    applyAvulsoRegistryToRows();
     applyTreatmentRegistryToRows();
     renderModalHeader();
     const filteredRows = filteredModalRows();
