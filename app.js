@@ -2718,9 +2718,10 @@
     const grouped = new Map();
     filtered.forEach(row => {
       const key = groupKey([value(row, 'city'), value(row, 'bairro')]);
-      if (!grouped.has(key)) grouped.set(key, { qty: 0, treatments: new Map() });
+      if (!grouped.has(key)) grouped.set(key, { qty: 0, avulsoQty: 0, treatments: new Map() });
       const data = grouped.get(key);
       data.qty += 1;
+      if (isAvulsoRow(row)) data.avulsoQty += 1;
       const treatment = clean(treatmentOrActionOf(row, ''));
       if (treatment) data.treatments.set(treatment, (data.treatments.get(treatment) || 0) + 1);
     });
@@ -2729,7 +2730,7 @@
     els.receivedTable.innerHTML = Array.from(grouped.entries())
       .map(([key, data]) => {
         const [city, bairro] = key.split('|');
-        return { city, bairro, qty: data.qty, treatment: formatGroupTreatments(data.treatments) };
+        return { city, bairro, qty: data.qty, treatment: formatGroupTreatments(data.treatments, data.avulsoQty) };
       })
       .sort((a, b) => (a.qty - b.qty) * direction || a.city.localeCompare(b.city, 'pt-BR') || a.bairro.localeCompare(b.bairro, 'pt-BR'))
       .map(item => `<tr class="clickable">
@@ -2744,8 +2745,9 @@
     renderReceivedSearch(filtered);
   }
 
-  function formatGroupTreatments(treatments) {
+  function formatGroupTreatments(treatments, avulsoQty = 0) {
     const items = Array.from(treatments.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'));
+    if (avulsoQty > 0) items.unshift(['AVULSO', avulsoQty]);
     if (!items.length) return 'Sem tratativa';
     const visible = items.slice(0, 2).map(([text, qty]) => qty > 1 ? `${text} (${number(qty)})` : text);
     const extra = items.length > 2 ? ` +${number(items.length - 2)}` : '';
@@ -3988,17 +3990,18 @@
       : 'Hub_Received';
     const baseLabel = isDamageRow(row)
       ? 'Avaria'
-      : isAvulsoRow(row)
-      ? 'Avulso'
       : (isOtherStatus(baseKind) ? baseKind : (baseKind === 'SOC_LHTransported' ? 'SOC LH' : 'Received'));
     return `
       <tr>
         <td>${html(value(row, 'tracking'))}</td>
         <td>
-          <select class="status-action-select" data-status-row="${html(row.__txfRowId || '')}">
-            <option value="${html(baseKind)}" ${latestStatusActionOf(row) === 'Criado AT' ? '' : 'selected'}>${html(baseLabel)}</option>
-            <option value="Criado AT" ${latestStatusActionOf(row) === 'Criado AT' ? 'selected' : ''}>Criado AT</option>
-          </select>
+          <div class="received-status-cell">
+            <select class="status-action-select" data-status-row="${html(row.__txfRowId || '')}">
+              <option value="${html(baseKind)}" ${latestStatusActionOf(row) === 'Criado AT' ? '' : 'selected'}>${html(baseLabel)}</option>
+              <option value="Criado AT" ${latestStatusActionOf(row) === 'Criado AT' ? 'selected' : ''}>Criado AT</option>
+            </select>
+            ${isAvulsoRow(row) ? '<span class="status-pill st-avulso avulso-marker">AVULSO</span>' : ''}
+          </div>
         </td>
         <td>${html(cepOf(row))}</td>
         <td>${html(value(row, 'city'))}</td>
