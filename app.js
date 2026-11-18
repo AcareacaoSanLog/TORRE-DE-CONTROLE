@@ -4094,7 +4094,7 @@
   }
 
   function copyRows(rows) {
-    const includeTreatment = rows.some(row => row.__txfTratativa || row.__txfStatusAction);
+    const includeTreatment = rows.some(row => row.__txfTratativa || row.__txfStatusAction || isAvulsoRow(row));
     const text = rows.map(row => [
       value(row, 'tracking'),
       statusOf(row),
@@ -4103,7 +4103,7 @@
       value(row, 'bairro'),
       value(row, 'driverId'),
       value(row, 'driver'),
-      ...(includeTreatment ? [latestStatusActionOf(row), latestTreatmentOf(row, '')] : [])
+      ...(includeTreatment ? [latestStatusActionOf(row), latestTreatmentOf(row, '') || (isAvulsoRow(row) ? 'AVULSO' : '')] : [])
     ].join('\t')).join('\n');
     navigator.clipboard?.writeText(text);
   }
