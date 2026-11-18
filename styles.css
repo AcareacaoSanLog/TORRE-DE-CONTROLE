@@ -1650,6 +1650,7 @@ tr.clickable:hover { background: var(--surface-2); }
 .st-delivering { color: #061016; background: var(--cyan); }
 .st-received { color: #111; background: var(--amber); }
 .st-damage { color: #fff; background: var(--orange); }
+.st-avulso { color: #fff; background: var(--blue); }
 .st-assigned { color: #fff; background: var(--violet); }
 .st-hold { color: #fff; background: var(--red); }
 .st-other { color: var(--text); background: var(--surface-3); }
@@ -2479,6 +2480,7 @@ td {
 .st-delivering { color: #061016; background: var(--cyan); }
 .st-received { color: #111; background: var(--amber); }
 .st-damage { color: #fff; background: var(--orange); }
+.st-avulso { color: #fff; background: var(--blue); }
 .st-assigned { color: #fff; background: var(--violet); }
 .st-soc-lh { color: #fff; background: var(--blue); }
 .st-hold { color: #fff; background: var(--red); }

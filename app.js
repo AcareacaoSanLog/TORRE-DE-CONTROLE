@@ -162,7 +162,11 @@
     damageStats: document.getElementById('damageStats'),
     damageTable: document.getElementById('damageTable'),
     avulsoForm: document.getElementById('avulsoForm'),
-    avulsoTrackings: document.getElementById('avulsoTrackings'),
+    avulsoTracking: document.getElementById('avulsoTracking'),
+    avulsoBulkTrackings: document.getElementById('avulsoBulkTrackings'),
+    avulsoCepPreview: document.getElementById('avulsoCepPreview'),
+    avulsoCityPreview: document.getElementById('avulsoCityPreview'),
+    avulsoBairroPreview: document.getElementById('avulsoBairroPreview'),
     avulsoMessage: document.getElementById('avulsoMessage'),
     avulsoCount: document.getElementById('avulsoCount'),
     avulsoSearch: document.getElementById('avulsoSearch'),
@@ -282,6 +286,7 @@
     Return_Hub_Received: { label: 'Received retorno', className: 'st-received', tone: 'high' },
     Hub_Assigned: { label: 'Hub Atribuído', className: 'st-assigned', tone: 'normal' },
     Hub_Assigning: { label: 'Atribuindo', className: 'st-assigned', tone: 'normal' },
+    Avulso: { label: 'AVULSO', className: 'st-avulso', tone: 'normal' },
     SOC_LHTransported: { label: 'SOC LH', className: 'st-soc-lh', tone: 'normal' },
     Avaria: { label: 'Avaria', className: 'st-damage', tone: 'high' },
     OnHold: { label: 'OnHold', className: 'st-hold', tone: 'critical' },
@@ -435,6 +440,9 @@
       if (!trackingId) return normalized;
       normalized[trackingId] = {
         tracking,
+        cep: normalizeCepDigits(item?.cep || ''),
+        city: clean(item?.city || ''),
+        bairro: clean(item?.bairro || ''),
         createdAt: item?.createdAt || item?.updatedAt || '',
         updatedAt: item?.updatedAt || item?.createdAt || '',
         deleted: Boolean(item?.deleted)
@@ -460,9 +468,24 @@
   }
 
   function avulsoEntries() {
-    return Object.entries(normalizedAvulsoRegistry())
-      .filter(([, item]) => !item.deleted)
-      .map(([key, item]) => ({ key, ...item }))
+    const entries = new Map();
+    state.rows.forEach(row => {
+      if (!isAvulsoRow(row)) return;
+      const key = trackingKey(value(row, 'tracking'));
+      const registryItem = state.avulsoRegistry[key];
+      if (!key || entries.has(key) || registryItem?.deleted) return;
+      entries.set(key, {
+        key,
+        tracking: value(row, 'tracking'),
+        cep: cepOf(row),
+        city: value(row, 'city'),
+        bairro: value(row, 'bairro'),
+        status: statusOf(row),
+        createdAt: registryItem?.createdAt || row.__txfAvulsoCreatedAt || '',
+        row
+      });
+    });
+    return Array.from(entries.values())
       .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
   }
 
@@ -893,7 +916,9 @@
         __txfStatusAction: latestStatusActionOf(row),
         __txfTreatmentUpdatedAt: treatmentRecord?.updatedAt || row.__txfTreatmentUpdatedAt || '',
         __txfDamage: row.__txfDamage || '',
-        __txfDamageCreatedAt: row.__txfDamageCreatedAt || ''
+        __txfDamageCreatedAt: row.__txfDamageCreatedAt || '',
+        __txfAvulso: row.__txfAvulso || '',
+        __txfAvulsoCreatedAt: row.__txfAvulsoCreatedAt || ''
       };
     });
   }
@@ -1081,6 +1106,9 @@
         } else if (incomingMs === currentMs && !current.deleted && !incoming.deleted) {
           merged[key] = {
             ...current,
+            cep: current.cep || incoming.cep,
+            city: current.city || incoming.city,
+            bairro: current.bairro || incoming.bairro,
             createdAt: current.createdAt || incoming.createdAt
           };
         }
@@ -1117,13 +1145,18 @@
       payload.damageRegistry || {},
       state.damageRegistry || {}
     );
-    state.avulsoRegistry = mergeAvulsoRegistries(payload.avulsoRegistry || {}, state.avulsoRegistry || {});
+    state.avulsoRegistry = mergeAvulsoRegistries(
+      buildAvulsoRegistryFromRows(cloudRows),
+      payload.avulsoRegistry || {},
+      state.avulsoRegistry || {}
+    );
     persistAvulsoRegistry();
     state.manualCepRegistry = mergeManualCepRegistries(payload.manualCepRegistry || {}, state.manualCepRegistry || {});
     persistManualCepRegistry();
     if (options.applyToRows && state.rows.length) {
       applyManualCepRegistryToRows();
       applyDamageRegistryToRows();
+      applyAvulsoRegistryToRows();
       applyTreatmentRegistryToRows();
     }
     return true;
@@ -1161,7 +1194,11 @@
       payload?.damageRegistry || {},
       state.damageRegistry || {}
     );
-    state.avulsoRegistry = mergeAvulsoRegistries(payload?.avulsoRegistry || {}, state.avulsoRegistry || {});
+    state.avulsoRegistry = mergeAvulsoRegistries(
+      buildAvulsoRegistryFromRows(rows),
+      payload?.avulsoRegistry || {},
+      state.avulsoRegistry || {}
+    );
     persistAvulsoRegistry();
     state.manualCepRegistry = mergeManualCepRegistries(payload?.manualCepRegistry || {}, state.manualCepRegistry || {});
     persistManualCepRegistry();
@@ -1179,6 +1216,7 @@
     ensureRowIds();
     applyManualCepRegistryToRows();
     applyDamageRegistryToRows();
+    applyAvulsoRegistryToRows();
     applyTreatmentRegistryToRows();
     clearFilters();
     renderAll();
@@ -1438,6 +1476,24 @@
     }, {});
   }
 
+  function buildAvulsoRegistryFromRows(rows) {
+    return rows.filter(row => row.__txfAvulso).reduce((registry, row) => {
+      const key = trackingKey(row.tracking || row.__tracking || row.__txfTracking || row.tracking_code || value(row, 'tracking') || '');
+      if (key) {
+        registry[key] = {
+          tracking: key,
+          cep: row.cep || '',
+          city: row.city || '',
+          bairro: row.bairro || '',
+          createdAt: row.__txfAvulsoCreatedAt || '',
+          updatedAt: row.__txfAvulsoCreatedAt || '',
+          deleted: false
+        };
+      }
+      return registry;
+    }, {});
+  }
+
   function registerDamage(tracking, lookup, treatment) {
     const key = trackingKey(tracking);
     if (!key) return null;
@@ -1462,6 +1518,23 @@
       if (!raw(row, 'cep') && registryItem.cep) row.cep = registryItem.cep;
       if (!raw(row, 'city') && registryItem.city) row.city = registryItem.city;
       if (!raw(row, 'bairro') && registryItem.bairro) row.bairro = registryItem.bairro;
+    });
+  }
+
+  function applyAvulsoRegistryToRows() {
+    state.rows.forEach(row => {
+      const key = trackingKey(value(row, 'tracking'));
+      const registryItem = state.avulsoRegistry[key];
+      if (!registryItem || registryItem.deleted) {
+        delete row.__txfAvulso;
+        delete row.__txfAvulsoCreatedAt;
+        return;
+      }
+      row.__txfAvulso = '1';
+      row.__txfAvulsoCreatedAt = registryItem.createdAt || row.__txfAvulsoCreatedAt || '';
+      if (!registryItem.cep) registryItem.cep = cepOf(row);
+      if (!registryItem.city) registryItem.city = value(row, 'city');
+      if (!registryItem.bairro) registryItem.bairro = value(row, 'bairro');
     });
   }
 
@@ -1526,6 +1599,10 @@
 
   function isDamageRow(row) {
     return Boolean(row.__txfDamage);
+  }
+
+  function isAvulsoRow(row) {
+    return Boolean(row.__txfAvulso);
   }
 
   function detectColumns(rows) {
@@ -3136,11 +3213,57 @@
     els.avulsoMessage.className = type ? `muted ${type}` : 'muted';
   }
 
+  function updateAvulsoPreview() {
+    const tracking = clean(els.avulsoTracking.value);
+    if (!tracking) {
+      els.avulsoCepPreview.textContent = 'Digite a BR';
+      els.avulsoCityPreview.textContent = 'Digite a BR';
+      els.avulsoBairroPreview.textContent = 'Digite a BR';
+      return;
+    }
+    const lookup = damageLookupFromTracking(tracking);
+    if (!lookup) {
+      els.avulsoCepPreview.textContent = 'BR não encontrada';
+      els.avulsoCityPreview.textContent = 'Importe a planilha';
+      els.avulsoBairroPreview.textContent = 'ou confira a BR';
+      return;
+    }
+    els.avulsoCepPreview.textContent = lookup.cep || 'Sem CEP';
+    els.avulsoCityPreview.textContent = lookup.city || 'Sem cidade';
+    els.avulsoBairroPreview.textContent = lookup.bairro || 'Sem bairro';
+  }
+
   function parseAvulsoTrackings() {
-    return clean(els.avulsoTrackings?.value)
-      .split(/[\s,;]+/)
+    const single = clean(els.avulsoTracking.value);
+    const bulk = clean(els.avulsoBulkTrackings.value);
+    return Array.from(new Set([single, ...bulk.split(/[\s,;]+/)]
       .map(item => clean(item).toUpperCase())
-      .filter(item => item && item !== 'SEM TRACKING');
+      .filter(item => item && item !== 'SEM TRACKING')));
+  }
+
+  function markAvulsoTracking(tracking) {
+    const lookup = damageLookupFromTracking(tracking);
+    if (!lookup) return { tracking, ok: false };
+    const key = trackingKey(tracking);
+    const existing = state.avulsoRegistry[key];
+    if (existing && !existing.deleted) return { tracking, ok: true, duplicate: true };
+
+    const now = new Date().toISOString();
+    state.avulsoRegistry[key] = {
+      tracking: value(lookup.row, 'tracking') || tracking,
+      cep: lookup.cep || '',
+      city: lookup.city || '',
+      bairro: lookup.bairro || '',
+      createdAt: now,
+      updatedAt: now,
+      deleted: false
+    };
+    state.rows.forEach(row => {
+      if (trackingKey(value(row, 'tracking')) !== key) return;
+      row.__txfAvulso = '1';
+      row.__txfAvulsoCreatedAt = now;
+    });
+    return { tracking, ok: true, duplicate: false };
   }
 
   function addAvulsoEntries(event) {
@@ -3148,40 +3271,29 @@
     const trackings = parseAvulsoTrackings();
     if (!trackings.length) {
       setAvulsoMessage('Informe ao menos uma BR.', 'warn');
-      els.avulsoTrackings.focus();
+      els.avulsoTracking.focus();
       return;
     }
 
-    let added = 0;
-    let duplicates = 0;
-    trackings.forEach(tracking => {
-      const key = trackingKey(tracking);
-      const existing = state.avulsoRegistry[key];
-      if (existing && !existing.deleted) {
-        duplicates += 1;
-        return;
-      }
-      const now = new Date().toISOString();
-      state.avulsoRegistry[key] = {
-        tracking,
-        createdAt: now,
-        updatedAt: now,
-        deleted: false
-      };
-      added += 1;
-    });
-
-    if (added) {
+    const results = trackings.map(markAvulsoTracking);
+    const added = results.filter(item => item.ok && !item.duplicate);
+    const duplicates = results.filter(item => item.duplicate);
+    const missing = results.filter(item => !item.ok);
+    if (added.length) {
       persistAvulsoRegistry();
       els.avulsoForm.reset();
+      updateAvulsoPreview();
       renderAll();
       scheduleCloudSave(350);
     } else {
       renderAvulsoView();
     }
-    const addedText = `${number(added)} ${plural(added, 'BR avulsa adicionada', 'BRs avulsas adicionadas')}`;
-    const duplicateText = duplicates ? `; ${number(duplicates)} ${plural(duplicates, 'duplicada ignorada', 'duplicadas ignoradas')}` : '';
-    setAvulsoMessage(`${addedText}${duplicateText}.`, duplicates && !added ? 'warn' : '');
+
+    const parts = [];
+    if (added.length) parts.push(`${number(added.length)} ${plural(added.length, 'BR adicionada', 'BRs adicionadas')}`);
+    if (duplicates.length) parts.push(`${number(duplicates.length)} ${plural(duplicates.length, 'já cadastrada', 'já cadastradas')}`);
+    if (missing.length) parts.push(`${number(missing.length)} ${plural(missing.length, 'não encontrada', 'não encontradas')} na expectativa: ${missing.map(item => item.tracking).join(', ')}`);
+    setAvulsoMessage(`${parts.join('; ')}.`, missing.length && !added.length ? 'warn' : '');
   }
 
   function removeAvulsoEntry(key) {
@@ -3192,6 +3304,11 @@
       deleted: true,
       updatedAt: new Date().toISOString()
     };
+    state.rows.forEach(row => {
+      if (trackingKey(value(row, 'tracking')) !== key) return;
+      delete row.__txfAvulso;
+      delete row.__txfAvulsoCreatedAt;
+    });
     persistAvulsoRegistry();
     renderAll();
     scheduleCloudSave(350);
@@ -3200,7 +3317,9 @@
   function renderAvulsoView() {
     const entries = avulsoEntries();
     const search = low(els.avulsoSearch?.value || '');
-    const visible = search ? entries.filter(item => low(item.tracking).includes(search)) : entries;
+    const visible = search ? entries.filter(item => low([
+      item.tracking, item.cep, item.city, item.bairro, item.status
+    ].join(' ')).includes(search)) : entries;
     if (els.avulsoCount) {
       els.avulsoCount.textContent = `${number(entries.length)} ${plural(entries.length, 'cadastrada', 'cadastradas')}`;
     }
@@ -3209,12 +3328,20 @@
     els.avulsoTable.innerHTML = visible.map(item => {
       const createdAt = Date.parse(item.createdAt);
       const dateText = Number.isFinite(createdAt) ? new Date(createdAt).toLocaleString('pt-BR') : '-';
+      const baseStatus = statusConfig[item.status]
+        ? statusPill(item.status)
+        : `<span class="status-pill st-other">${html(raw(item.row, 'status') || item.status)}</span>`;
       return `<tr>
         <td>${html(item.tracking)}</td>
+        <td>${html(item.cep)}</td>
+        <td>${html(item.city)}</td>
+        <td>${html(item.bairro)}</td>
+        <td>${statusPill('Avulso')}</td>
+        <td>${baseStatus}</td>
         <td>${html(dateText)}</td>
         <td><button class="mini-button danger" type="button" data-remove-avulso="${html(item.key)}">Remover</button></td>
       </tr>`;
-    }).join('') || `<tr><td colspan="3">${search ? 'Nenhuma BR encontrada.' : 'Nenhuma BR avulsa cadastrada.'}</td></tr>`;
+    }).join('') || `<tr><td colspan="8">${search ? 'Nenhuma BR encontrada.' : 'Nenhuma BR avulsa cadastrada na expectativa atual.'}</td></tr>`;
   }
 
   function routeStatsFor(rows) {
@@ -3482,6 +3609,7 @@
   const debouncedGlobalSearch = debounce(() => renderSearch(), 160);
   const debouncedModalSearch = debounce(() => renderModalRows(), 160);
   const debouncedDamagePreview = debounce(() => updateDamagePreview(), 140);
+  const debouncedAvulsoPreview = debounce(() => updateAvulsoPreview(), 140);
 
   function setImportBusy(isBusy, message = '') {
     importInProgress = isBusy;
@@ -3663,6 +3791,7 @@
       await syncProtectedDataFromCloud({ silent: true, applyToRows: false });
       applyManualCepRegistryToRows();
       applyDamageRegistryToRows();
+      applyAvulsoRegistryToRows();
       applyTreatmentRegistryToRows();
 
       await nextFrame();
@@ -4176,6 +4305,7 @@
       event.preventDefault();
       addDamageEntry();
     });
+    els.avulsoTracking.addEventListener('input', debouncedAvulsoPreview);
     els.avulsoForm.addEventListener('submit', addAvulsoEntries);
     els.avulsoSearch.addEventListener('input', renderAvulsoView);
     els.manualCepForm?.addEventListener('submit', addManualCepEntry);

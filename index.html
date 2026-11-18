@@ -16,7 +16,7 @@
       } catch (error) {}
     }());
   </script>
-  <link rel="stylesheet" href="styles.css?v=avulsos-dashboard-20261118">
+  <link rel="stylesheet" href="styles.css?v=avulsos-base-lookup-20261118">
 </head>
 <body class="auth-locked auth-checking">
   <section class="auth-screen" id="authScreen">
@@ -542,9 +542,21 @@
             <div class="panel-head"><h3>📦 Adicionar BR avulsa</h3></div>
             <form class="damage-form" id="avulsoForm">
               <label>
-                <span>BRs</span>
-                <textarea id="avulsoTrackings" rows="7" placeholder="Digite ou cole as BRs"></textarea>
+                <span>BR do pacote</span>
+                <input id="avulsoTracking" type="text" placeholder="Ex.: BR123456789" autocomplete="off">
               </label>
+              <label>
+                <span>BRs em massa</span>
+                <textarea id="avulsoBulkTrackings" rows="5" placeholder="Cole várias BRs aqui, uma por linha"></textarea>
+              </label>
+              <div class="damage-preview">
+                <span>CEP da BR</span>
+                <strong id="avulsoCepPreview">Digite a BR</strong>
+                <span>Cidade</span>
+                <strong id="avulsoCityPreview">Digite a BR</strong>
+                <span>Bairro</span>
+                <strong id="avulsoBairroPreview">Digite a BR</strong>
+              </div>
               <button class="import-button damage-submit" type="submit">Adicionar BRs</button>
               <p class="muted" id="avulsoMessage" aria-live="polite">0 BRs cadastradas.</p>
             </form>
@@ -559,7 +571,7 @@
               <span>Buscar BR</span>
               <input id="avulsoSearch" type="search" placeholder="Digite a BR">
             </label>
-            <div class="table-wrap tall"><table><thead><tr><th>BR</th><th>Data de cadastro</th><th></th></tr></thead><tbody id="avulsoTable"></tbody></table></div>
+            <div class="table-wrap tall"><table><thead><tr><th>BR</th><th>CEP</th><th>Cidade</th><th>Bairro</th><th>Classificação</th><th>Status na expectativa</th><th>Data de cadastro</th><th></th></tr></thead><tbody id="avulsoTable"></tbody></table></div>
           </section>
         </div>
       </section>
@@ -689,6 +701,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cep-map.js?v=cep-atualizado-2-0-20260702"></script>
   <script src="driver-db.js"></script>
-  <script src="app.js?v=avulsos-dashboard-20261118"></script>
+  <script src="app.js?v=avulsos-base-lookup-20261118"></script>
 </body>
 </html>
